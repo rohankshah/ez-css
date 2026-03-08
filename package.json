@@ -1,0 +1,33 @@
+{
+  "name": "ez-css",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/cli.js",
+  "types": "dist/cli.d.ts",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "ez-css": "./dist/cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "tsup src/cli.ts --watch",
+    "build": "tsup src/cli.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.29.0",
+    "@babel/traverse": "^7.29.0",
+    "commander": "^14.0.3",
+    "postcss": "^8.5.8"
+  }
+}
