@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
-import synthAction from '@/core/synth'
+import { getConfig } from '@/core/utils'
+import { Watcher } from '@/watcher/Watcher'
 import { Command } from 'commander'
 
 const program = new Command()
 
-program.command('synth').action(synthAction)
+program.command('watch').action(async() => {
+    const configRoot = await getConfig()
+    const watcher = new Watcher(configRoot)
+    watcher.setupWatch()
+})
 
 program.parse()

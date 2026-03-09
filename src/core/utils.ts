@@ -1,5 +1,24 @@
-import { readdir, stat } from 'node:fs/promises'
-import path from 'node:path'
+import { open, readFile, stat } from 'node:fs/promises'
+
+async function getConfig() {
+  const runPath = process.env.INIT_CWD
+
+  const configPath = runPath + '/.ez-css-config.json'
+
+  const configExists = await checkIfFileExists(configPath)
+
+  if (!configExists) {
+    throw 'Config not found'
+  }
+
+  const configDataRaw = await readFile(configPath, 'utf8')
+
+  const configData = JSON.parse(configDataRaw)
+
+  const configRoot = configData['root']
+
+  return configRoot
+}
 
 async function checkIfFileExists(pathToCheck: string) {
   try {
@@ -13,33 +32,13 @@ async function checkIfFileExists(pathToCheck: string) {
   }
 }
 
-async function getFiles(dir: string, fileType: string[]) {
+async function createEmptyFile(filePath: string) {
   try {
-    const entries = await readdir(dir, { withFileTypes: true })
-
-    const files = await Promise.all(
-      entries.map(async (res) => {
-        const resPath = path.resolve(dir, res.name)
-
-        if (res.name === 'node_modules' || res.name === '.git') {
-          return []
-        }
-
-        if (res.isDirectory()) {
-          return getFiles(resPath, fileType)
-        }
-
-        const fileExtension = path.extname(res.name)
-        
-        return fileType.includes(fileExtension) ? resPath : []
-      })
-    )
-
-    return files.flat()
+    const fileHandle = await open(filePath, 'w')
+    await fileHandle.close()
   } catch (err) {
     console.error(err)
-    return []
   }
 }
 
-export { checkIfFileExists, getFiles }
+export { checkIfFileExists, getConfig, createEmptyFile }

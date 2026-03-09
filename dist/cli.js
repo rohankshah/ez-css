@@ -14110,7 +14110,47 @@ var require_lib3 = __commonJS({
   }
 });
 
-// src/core/parseJSX.ts
+// src/core/utils.ts
+var import_promises = require("fs/promises");
+function getConfig() {
+  return __async(this, null, function* () {
+    const runPath = process.env.INIT_CWD;
+    const configPath = runPath + "/.ez-css-config.json";
+    const configExists = yield checkIfFileExists(configPath);
+    if (!configExists) {
+      throw "Config not found";
+    }
+    const configDataRaw = yield (0, import_promises.readFile)(configPath, "utf8");
+    const configData = JSON.parse(configDataRaw);
+    const configRoot = configData["root"];
+    return configRoot;
+  });
+}
+function checkIfFileExists(pathToCheck) {
+  return __async(this, null, function* () {
+    try {
+      const stats = yield (0, import_promises.stat)(pathToCheck);
+      return stats.isFile();
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+  });
+}
+function createEmptyFile(filePath) {
+  return __async(this, null, function* () {
+    try {
+      const fileHandle = yield (0, import_promises.open)(filePath, "w");
+      yield fileHandle.close();
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
+
+// src/core/jsxParser.ts
 var import_types = __toESM(require_lib3());
 function getClassesForFile(ast) {
   const classes = [];
@@ -14162,81 +14202,78 @@ function parseJSXExpressionContainer(valueNode) {
   return [];
 }
 
-// src/core/utils.ts
-var import_promises = require("fs/promises");
-var import_node_path = __toESM(require("path"));
-function checkIfFileExists(pathToCheck) {
-  return __async(this, null, function* () {
-    try {
-      const stats = yield (0, import_promises.stat)(pathToCheck);
-      return stats.isFile();
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return false;
-      }
-      throw error;
-    }
-  });
-}
-function getFiles(dir, fileType) {
-  return __async(this, null, function* () {
-    try {
-      const entries = yield (0, import_promises.readdir)(dir, { withFileTypes: true });
-      const files = yield Promise.all(
-        entries.map((res) => __async(null, null, function* () {
-          const resPath = import_node_path.default.resolve(dir, res.name);
-          if (res.name === "node_modules" || res.name === ".git") {
-            return [];
-          }
-          if (res.isDirectory()) {
-            return getFiles(resPath, fileType);
-          }
-          const fileExtension = import_node_path.default.extname(res.name);
-          return fileType.includes(fileExtension) ? resPath : [];
-        }))
-      );
-      return files.flat();
-    } catch (err) {
-      console.error(err);
-      return [];
-    }
-  });
-}
-
-// src/core/synth.ts
+// src/watcher/Watcher.ts
 var import_parser = require("@babel/parser");
+var import_chokidar = __toESM(require("chokidar"));
 var import_promises2 = require("fs/promises");
-function synthAction() {
-  return __async(this, null, function* () {
-    try {
-      const runPath = process.env.INIT_CWD;
-      const configPath = runPath + "/.ez-css-config.json";
-      const configExists = yield checkIfFileExists(configPath);
-      if (!configExists) {
-        throw "Config not found";
-      }
-      const configDataRaw = yield (0, import_promises2.readFile)(configPath, "utf8");
-      const configData = JSON.parse(configDataRaw);
-      const fileType = configData["fileType"];
-      const files = yield getFiles("./", fileType);
-      for (const file of files) {
-        const fileData = yield (0, import_promises2.readFile)(file, "utf8");
+var import_node_path = __toESM(require("path"));
+var import_postcss = __toESM(require("postcss"));
+var Watcher = class {
+  constructor(configRoot) {
+    this.configRoot = configRoot;
+    this.init();
+  }
+  init() {
+    this.watcher = import_chokidar.default.watch(this.configRoot, { ignored: /node_modules/, persistent: true });
+  }
+  setupWatch() {
+    if (!this.watcher) return;
+    this.watcher.on("change", this.watchHandler.bind(this));
+  }
+  watchHandler(filePath) {
+    return __async(this, null, function* () {
+      if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) {
+        const fileData = yield (0, import_promises2.readFile)(filePath, "utf8");
         const ast = (0, import_parser.parse)(fileData, {
           sourceType: "module",
           plugins: ["typescript", "jsx"]
         });
         const classes = getClassesForFile(ast);
-        console.log(classes);
+        const cssFilePath = filePath.replace(import_node_path.default.extname(filePath), ".css");
+        const cssFileExists = yield checkIfFileExists(cssFilePath);
+        if (!cssFileExists) {
+          yield createEmptyFile(cssFilePath);
+        }
+        const cssFileDataRaw = yield (0, import_promises2.readFile)(cssFilePath, "utf8");
+        const root = import_postcss.default.parse(cssFileDataRaw, { from: cssFilePath });
+        this.syncInOrder(classes, root);
+        const result = root.toResult();
+        yield (0, import_promises2.writeFile)(cssFilePath, result.css, "utf8");
       }
-    } catch (error) {
-      console.error("error: ", error);
-    }
-  });
-}
-var synth_default = synthAction;
+    });
+  }
+  // The aim for now is to preserve
+  syncInOrder(classNames, root) {
+    const ruleMap = /* @__PURE__ */ new Map();
+    const uniqueJSXClasses = [...new Set(classNames)];
+    root.walkRules((rule) => {
+      const name = rule.selector.replace(/^\./, "");
+      if (uniqueJSXClasses.includes(name)) {
+        ruleMap.set(name, rule);
+      }
+      rule.remove();
+    });
+    uniqueJSXClasses.forEach((name) => {
+      if (ruleMap.has(name)) {
+        root.append(ruleMap.get(name));
+        ruleMap.delete(name);
+      } else {
+        const newRule = new import_postcss.Rule({ selector: `.${name}` });
+        root.append(newRule);
+      }
+    });
+    ruleMap.forEach((rule) => {
+      root.append(rule);
+    });
+  }
+};
 
 // src/cli.ts
 var import_commander = require("commander");
 var program = new import_commander.Command();
-program.command("synth").action(synth_default);
+program.command("watch").action(() => __async(null, null, function* () {
+  const configRoot = yield getConfig();
+  const watcher = new Watcher(configRoot);
+  watcher.setupWatch();
+}));
 program.parse();
