@@ -14110,107 +14110,164 @@ var require_lib3 = __commonJS({
   }
 });
 
-// src/core/utils.ts
-var import_promises = require("fs/promises");
-function getConfig() {
-  return __async(this, null, function* () {
-    const runPath = process.env.INIT_CWD;
-    const configPath = runPath + "/.ez-css-config.json";
-    const configExists = yield checkIfFileExists(configPath);
-    if (!configExists) {
-      throw "Config not found";
-    }
-    const configDataRaw = yield (0, import_promises.readFile)(configPath, "utf8");
-    const configData = JSON.parse(configDataRaw);
-    const configRoot = configData["root"];
-    return configRoot;
-  });
-}
-function checkIfFileExists(pathToCheck) {
-  return __async(this, null, function* () {
-    try {
-      const stats = yield (0, import_promises.stat)(pathToCheck);
-      return stats.isFile();
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return false;
-      }
-      throw error;
-    }
-  });
-}
-function createEmptyFile(filePath) {
-  return __async(this, null, function* () {
-    try {
-      const fileHandle = yield (0, import_promises.open)(filePath, "w");
-      yield fileHandle.close();
-    } catch (err) {
-      console.error(err);
-    }
-  });
-}
-
-// src/core/jsxParser.ts
-var import_types = __toESM(require_lib3());
-function getClassesForFile(ast) {
-  const classes = [];
-  (0, import_types.traverse)(ast, {
-    enter(path2) {
-      if (path2.type === "JSXAttribute" && path2.name.name === "className") {
-        const valueNode = path2.value;
-        if (valueNode.type === "StringLiteral") {
-          const parsedClasses = parseStringLiteral(valueNode);
-          classes.push(...parsedClasses);
-        }
-        if (valueNode.type === "JSXExpressionContainer") {
-          const parsedClasses = parseJSXExpressionContainer(valueNode);
-          classes.push(...parsedClasses);
-        }
-      }
-    }
-  });
-  return classes;
-}
-function parseStringLiteral(valueNode) {
-  const rawClasses = valueNode == null ? void 0 : valueNode.value;
-  return rawClasses.split(" ");
-}
-function splitClasses(value) {
-  return value.trim().split(/\s+/).filter(Boolean);
-}
-function extractStringLiteral(node) {
-  if (node.type === "StringLiteral") {
-    return splitClasses(node.value);
-  }
-  return [];
-}
-function parseJSXExpressionContainer(valueNode) {
-  const expression = valueNode.expression;
-  if (expression.type === "StringLiteral") {
-    return splitClasses(expression.value);
-  }
-  if (expression.type === "TemplateLiteral") {
-    const staticClasses = expression.quasis.flatMap((q) => splitClasses(q.value.raw));
-    const conditionalClasses = expression.expressions.flatMap((e) => {
-      if (e.type === "ConditionalExpression") {
-        return [...extractStringLiteral(e.consequent), ...extractStringLiteral(e.alternate)];
-      }
-      return [];
-    });
-    return [...staticClasses, ...conditionalClasses];
-  }
-  return [];
-}
-
-// src/watcher/Watcher.ts
-var import_parser = require("@babel/parser");
-var import_chokidar = __toESM(require("chokidar"));
-var import_promises2 = require("fs/promises");
+// src/FileProcessor/FileProcessor.ts
 var import_node_path = __toESM(require("path"));
-var import_postcss = __toESM(require("postcss"));
+var FileProcessor = class {
+  constructor(jsxParser, fileUtils, cssProcessor) {
+    this.jsxParser = jsxParser;
+    this.fileUtils = fileUtils;
+    this.cssProcessor = cssProcessor;
+  }
+  processFile(filePath) {
+    return __async(this, null, function* () {
+      const fileData = yield this.fileUtils.readUtf8File(filePath);
+      const classes = this.jsxParser.getClassesForFile(fileData);
+      const cssFilePath = filePath.replace(import_node_path.default.extname(filePath), ".css");
+      const cssFileExists = yield this.fileUtils.checkIfFileExists(cssFilePath);
+      if (!cssFileExists) {
+        yield this.fileUtils.createEmptyFile(cssFilePath);
+      }
+      const rawCss = yield this.fileUtils.readUtf8File(cssFilePath);
+      const modifiedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
+      yield this.fileUtils.writeFile(cssFilePath, modifiedCss.css);
+    });
+  }
+};
+
+// src/JSXParser/JSXParser.ts
+var import_parser = require("@babel/parser");
+var import_types = __toESM(require_lib3());
+var JSXParser = class {
+  constructor() {
+  }
+  getAst(fileData) {
+    return (0, import_parser.parse)(fileData, {
+      sourceType: "module",
+      plugins: ["typescript", "jsx"]
+    });
+  }
+  getClassesForFile(fileData) {
+    const classes = [];
+    const ast = this.getAst(fileData);
+    (0, import_types.traverse)(ast, {
+      enter: (path3) => {
+        if (path3.type === "JSXAttribute" && path3.name.name === "className") {
+          const valueNode = path3.value;
+          if (valueNode.type === "StringLiteral") {
+            const parsedClasses = this.parseStringLiteral(valueNode);
+            classes.push(...parsedClasses);
+          }
+          if (valueNode.type === "JSXExpressionContainer") {
+            const parsedClasses = this.parseJSXExpressionContainer(valueNode);
+            classes.push(...parsedClasses);
+          }
+        }
+      }
+    });
+    return classes;
+  }
+  parseStringLiteral(valueNode) {
+    const rawClasses = valueNode == null ? void 0 : valueNode.value;
+    return rawClasses.split(" ");
+  }
+  splitClasses(value) {
+    return value.trim().split(/\s+/).filter(Boolean);
+  }
+  extractStringLiteral(node) {
+    if (node.type === "StringLiteral") {
+      return this.splitClasses(node.value);
+    }
+    return [];
+  }
+  parseJSXExpressionContainer(valueNode) {
+    const expression = valueNode.expression;
+    if (expression.type === "StringLiteral") {
+      return this.splitClasses(expression.value);
+    }
+    if (expression.type === "TemplateLiteral") {
+      const staticClasses = expression.quasis.flatMap((q) => this.splitClasses(q.value.raw));
+      const conditionalClasses = expression.expressions.flatMap((e) => {
+        if (e.type === "ConditionalExpression") {
+          return [...this.extractStringLiteral(e.consequent), ...this.extractStringLiteral(e.alternate)];
+        }
+        return [];
+      });
+      return [...staticClasses, ...conditionalClasses];
+    }
+    return [];
+  }
+};
+
+// src/core/FileUtils/FileUtils.ts
+var import_promises = require("fs/promises");
+var FileUtils = class {
+  constructor() {
+  }
+  checkIfFileExists(pathToCheck) {
+    return __async(this, null, function* () {
+      try {
+        const stats = yield (0, import_promises.stat)(pathToCheck);
+        return stats.isFile();
+      } catch (error) {
+        if (error.code === "ENOENT") {
+          return false;
+        }
+        throw error;
+      }
+    });
+  }
+  createEmptyFile(filePath) {
+    return __async(this, null, function* () {
+      try {
+        const fileHandle = yield (0, import_promises.open)(filePath, "w");
+        yield fileHandle.close();
+      } catch (err) {
+        console.error(err);
+      }
+    });
+  }
+  writeFile(cssFilePath, result) {
+    return __async(this, null, function* () {
+      yield (0, import_promises.writeFile)(cssFilePath, result, "utf8");
+    });
+  }
+  readUtf8File(filePath) {
+    return __async(this, null, function* () {
+      const fileData = yield (0, import_promises.readFile)(filePath, "utf8");
+      return fileData;
+    });
+  }
+};
+
+// src/core/Utils/config.ts
+var Config = class {
+  constructor(fileUtils) {
+    this.fileUtils = fileUtils;
+  }
+  getConfig() {
+    return __async(this, null, function* () {
+      const runPath = process.env.INIT_CWD;
+      const configPath = runPath + "/.ez-css-config.json";
+      const configExists = yield this.fileUtils.checkIfFileExists(configPath);
+      if (!configExists) {
+        throw "Config not found";
+      }
+      const configDataRaw = yield this.fileUtils.readUtf8File(configPath);
+      const configData = JSON.parse(configDataRaw);
+      const configRoot = configData["root"];
+      return configRoot;
+    });
+  }
+};
+
+// src/Watcher/Watcher.ts
+var import_chokidar = __toESM(require("chokidar"));
+var import_node_path2 = __toESM(require("path"));
+var reactFileExtensions = [".tsx", ".jsx"];
 var Watcher = class {
-  constructor(configRoot) {
+  constructor(configRoot, fileProcessor) {
     this.configRoot = configRoot;
+    this.fileProcessor = fileProcessor;
     this.init();
   }
   init() {
@@ -14222,25 +14279,27 @@ var Watcher = class {
   }
   watchHandler(filePath) {
     return __async(this, null, function* () {
-      if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) {
-        const fileData = yield (0, import_promises2.readFile)(filePath, "utf8");
-        const ast = (0, import_parser.parse)(fileData, {
-          sourceType: "module",
-          plugins: ["typescript", "jsx"]
-        });
-        const classes = getClassesForFile(ast);
-        const cssFilePath = filePath.replace(import_node_path.default.extname(filePath), ".css");
-        const cssFileExists = yield checkIfFileExists(cssFilePath);
-        if (!cssFileExists) {
-          yield createEmptyFile(cssFilePath);
-        }
-        const cssFileDataRaw = yield (0, import_promises2.readFile)(cssFilePath, "utf8");
-        const root = import_postcss.default.parse(cssFileDataRaw, { from: cssFilePath });
-        this.syncInOrder(classes, root);
-        const result = root.toResult();
-        yield (0, import_promises2.writeFile)(cssFilePath, result.css, "utf8");
+      if (!reactFileExtensions.includes(import_node_path2.default.extname(filePath))) {
+        return;
       }
+      this.fileProcessor.processFile(filePath);
     });
+  }
+};
+
+// src/cli.ts
+var import_commander = require("commander");
+
+// src/CSSProcessor/CSSProcessor.ts
+var import_postcss = __toESM(require("postcss"));
+var import_postcss_media_query_parser = __toESM(require("postcss-media-query-parser"));
+var CSSProcessor = class {
+  constructor() {
+  }
+  processCss(rawCss, cssFilePath, modifiedClasses) {
+    const root = import_postcss.default.parse(rawCss, { from: cssFilePath });
+    this.syncInOrder(modifiedClasses, root);
+    return root.toResult();
   }
   // The aim for now is to preserve
   syncInOrder(classNames, root) {
@@ -14252,6 +14311,13 @@ var Watcher = class {
         ruleMap.set(name, rule);
       }
       rule.remove();
+    });
+    root.walkAtRules((atRule) => {
+      const media = (0, import_postcss_media_query_parser.default)(atRule.params);
+      if (media.type !== "media-query-list") {
+        return;
+      }
+      console.log(media["type"]);
     });
     uniqueJSXClasses.forEach((name) => {
       if (ruleMap.has(name)) {
@@ -14269,11 +14335,15 @@ var Watcher = class {
 };
 
 // src/cli.ts
-var import_commander = require("commander");
 var program = new import_commander.Command();
 program.command("watch").action(() => __async(null, null, function* () {
-  const configRoot = yield getConfig();
-  const watcher = new Watcher(configRoot);
+  const jsxParser = new JSXParser();
+  const fileUtils = new FileUtils();
+  const cssProcessor = new CSSProcessor();
+  const config = new Config(fileUtils);
+  const configRoot = yield config.getConfig();
+  const fileProcessor = new FileProcessor(jsxParser, fileUtils, cssProcessor);
+  const watcher = new Watcher(configRoot, fileProcessor);
   watcher.setupWatch();
 }));
 program.parse();
