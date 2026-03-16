@@ -14128,8 +14128,8 @@ var FileProcessor = class {
         yield this.fileUtils.createEmptyFile(cssFilePath);
       }
       const rawCss = yield this.fileUtils.readUtf8File(cssFilePath);
-      const modifiedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
-      yield this.fileUtils.writeFile(cssFilePath, modifiedCss.css);
+      const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
+      yield this.fileUtils.writeFile(cssFilePath, processedCss.css);
     });
   }
 };
@@ -14292,7 +14292,6 @@ var import_commander = require("commander");
 
 // src/CSSProcessor/CSSProcessor.ts
 var import_postcss = __toESM(require("postcss"));
-var import_postcss_media_query_parser = __toESM(require("postcss-media-query-parser"));
 var CSSProcessor = class {
   constructor() {
   }
@@ -14301,36 +14300,54 @@ var CSSProcessor = class {
     this.syncInOrder(modifiedClasses, root);
     return root.toResult();
   }
-  // The aim for now is to preserve
+  // The aim for now is to preserve classes that are not in use inside the jsx
+  // Could expose this to the config later on
   syncInOrder(classNames, root) {
-    const ruleMap = /* @__PURE__ */ new Map();
+    const mediaQueryMap = this.groupClassesByMediaQuery(classNames, root);
+    console.log(mediaQueryMap);
+  }
+  groupClassesByMediaQuery(classNames, root) {
+    const mediaQueryMap = /* @__PURE__ */ new Map();
+    mediaQueryMap.set("CORE", []);
+    mediaQueryMap.set("OTHERS", []);
     const uniqueJSXClasses = [...new Set(classNames)];
+    root.walkAtRules((atRule) => {
+      const mediaQuery = atRule.params;
+      atRule.walkRules((rule) => {
+        const selector = this.removeDotPrefix(rule.selector);
+        let mediaQueryRules = mediaQueryMap.get(mediaQuery);
+        if (!mediaQueryRules) {
+          mediaQueryRules = [];
+        }
+        const ruleMap = /* @__PURE__ */ new Map();
+        ruleMap.set(selector, rule);
+        mediaQueryRules.push(ruleMap);
+        mediaQueryMap.set(mediaQuery, mediaQueryRules);
+        rule.remove();
+      });
+      atRule.remove();
+    });
     root.walkRules((rule) => {
-      const name = rule.selector.replace(/^\./, "");
-      if (uniqueJSXClasses.includes(name)) {
-        ruleMap.set(name, rule);
+      const selector = this.removeDotPrefix(rule.selector);
+      if (uniqueJSXClasses.includes(selector)) {
+        const coreArr = mediaQueryMap.get("CORE");
+        const ruleMap = /* @__PURE__ */ new Map();
+        ruleMap.set(selector, rule);
+        coreArr.push(ruleMap);
+        mediaQueryMap.set("CORE", coreArr);
+      } else {
+        const otherArr = mediaQueryMap.get("OTHERS");
+        const ruleMap = /* @__PURE__ */ new Map();
+        ruleMap.set(selector, rule);
+        otherArr.push(ruleMap);
+        mediaQueryMap.set("OTHERS", otherArr);
       }
       rule.remove();
     });
-    root.walkAtRules((atRule) => {
-      const media = (0, import_postcss_media_query_parser.default)(atRule.params);
-      if (media.type !== "media-query-list") {
-        return;
-      }
-      console.log(media["type"]);
-    });
-    uniqueJSXClasses.forEach((name) => {
-      if (ruleMap.has(name)) {
-        root.append(ruleMap.get(name));
-        ruleMap.delete(name);
-      } else {
-        const newRule = new import_postcss.Rule({ selector: `.${name}` });
-        root.append(newRule);
-      }
-    });
-    ruleMap.forEach((rule) => {
-      root.append(rule);
-    });
+    return mediaQueryMap;
+  }
+  removeDotPrefix(selector) {
+    return selector.replace(/^\./, "");
   }
 };
 

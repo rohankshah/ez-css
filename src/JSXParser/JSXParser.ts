@@ -12,8 +12,7 @@ export class JSXParser {
   }
 
   getClassesForFile(fileData: string) {
-    
-    const classes = []
+    const classes: string[] = []
 
     const ast = this.getAst(fileData)
 
