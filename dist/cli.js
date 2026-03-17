@@ -14303,48 +14303,60 @@ var CSSProcessor = class {
   // The aim for now is to preserve classes that are not in use inside the jsx
   // Could expose this to the config later on
   syncInOrder(classNames, root) {
-    const mediaQueryMap = this.groupClassesByMediaQuery(classNames, root);
+    const uniqueJSXClasses = [...new Set(classNames)];
+    const mediaQueryMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root);
     console.log(mediaQueryMap);
   }
-  groupClassesByMediaQuery(classNames, root) {
+  groupClassesByMediaQuery(uniqueJSXClasses, root) {
     const mediaQueryMap = /* @__PURE__ */ new Map();
-    mediaQueryMap.set("CORE", []);
-    mediaQueryMap.set("OTHERS", []);
-    const uniqueJSXClasses = [...new Set(classNames)];
+    this.extractAtRules(root, uniqueJSXClasses, mediaQueryMap);
+    this.extractRules(root, uniqueJSXClasses, mediaQueryMap);
+    return mediaQueryMap;
+  }
+  extractAtRules(root, uniqueJSXClasses, mediaQueryMap) {
     root.walkAtRules((atRule) => {
       const mediaQuery = atRule.params;
+      if (!mediaQueryMap.has(mediaQuery)) {
+        mediaQueryMap.set(
+          mediaQuery,
+          /* @__PURE__ */ new Map([
+            ["CORE", []],
+            ["OTHER", []]
+          ])
+        );
+      }
+      const ruleTypeMap = mediaQueryMap.get(mediaQuery);
       atRule.walkRules((rule) => {
         const selector = this.removeDotPrefix(rule.selector);
-        let mediaQueryRules = mediaQueryMap.get(mediaQuery);
-        if (!mediaQueryRules) {
-          mediaQueryRules = [];
-        }
+        const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
+        const ruleMapArr = ruleTypeMap.get(ruleType);
         const ruleMap = /* @__PURE__ */ new Map();
         ruleMap.set(selector, rule);
-        mediaQueryRules.push(ruleMap);
-        mediaQueryMap.set(mediaQuery, mediaQueryRules);
-        rule.remove();
+        ruleMapArr.push(ruleMap);
       });
-      atRule.remove();
     });
+  }
+  extractRules(root, uniqueJSXClasses, mediaQueryMap) {
+    if (!mediaQueryMap.has("INDIVIDUAL")) {
+      mediaQueryMap.set(
+        "INDIVIDUAL",
+        /* @__PURE__ */ new Map([
+          ["CORE", []],
+          ["OTHER", []]
+        ])
+      );
+    }
+    const individualMap = mediaQueryMap.get("INDIVIDUAL");
     root.walkRules((rule) => {
+      var _a;
+      if (((_a = rule.parent) == null ? void 0 : _a.type) === "atrule") return;
       const selector = this.removeDotPrefix(rule.selector);
-      if (uniqueJSXClasses.includes(selector)) {
-        const coreArr = mediaQueryMap.get("CORE");
-        const ruleMap = /* @__PURE__ */ new Map();
-        ruleMap.set(selector, rule);
-        coreArr.push(ruleMap);
-        mediaQueryMap.set("CORE", coreArr);
-      } else {
-        const otherArr = mediaQueryMap.get("OTHERS");
-        const ruleMap = /* @__PURE__ */ new Map();
-        ruleMap.set(selector, rule);
-        otherArr.push(ruleMap);
-        mediaQueryMap.set("OTHERS", otherArr);
-      }
-      rule.remove();
+      const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
+      const ruleArr = individualMap.get(ruleType);
+      const ruleMap = /* @__PURE__ */ new Map();
+      ruleMap.set(selector, rule);
+      ruleArr.push(ruleMap);
     });
-    return mediaQueryMap;
   }
   removeDotPrefix(selector) {
     return selector.replace(/^\./, "");
