@@ -2,6 +2,7 @@ import { FileUtils } from '@/core/FileUtils/FileUtils'
 import { CSSProcessor } from '@/CSSProcessor/CSSProcessor'
 import { JSXParser } from '@/JSXParser/JSXParser'
 import path from 'node:path'
+import prettier from 'prettier'
 
 export class FileProcessor {
   jsxParser: JSXParser
@@ -34,6 +35,10 @@ export class FileProcessor {
     // Process CSS
     const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes)
 
-    await this.fileUtils.writeFile(cssFilePath, processedCss.css)
+    const formatted = await prettier.format(processedCss.css, {
+      parser: 'css'
+    })
+
+    await this.fileUtils.writeFile(cssFilePath, formatted)
   }
 }

@@ -14112,6 +14112,7 @@ var require_lib3 = __commonJS({
 
 // src/FileProcessor/FileProcessor.ts
 var import_node_path = __toESM(require("path"));
+var import_prettier = __toESM(require("prettier"));
 var FileProcessor = class {
   constructor(jsxParser, fileUtils, cssProcessor) {
     this.jsxParser = jsxParser;
@@ -14128,8 +14129,11 @@ var FileProcessor = class {
         yield this.fileUtils.createEmptyFile(cssFilePath);
       }
       const rawCss = yield this.fileUtils.readUtf8File(cssFilePath);
-      const modifiedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
-      yield this.fileUtils.writeFile(cssFilePath, modifiedCss.css);
+      const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
+      const formatted = yield import_prettier.default.format(processedCss.css, {
+        parser: "css"
+      });
+      yield this.fileUtils.writeFile(cssFilePath, formatted);
     });
   }
 };
@@ -14254,8 +14258,8 @@ var Config = class {
       }
       const configDataRaw = yield this.fileUtils.readUtf8File(configPath);
       const configData = JSON.parse(configDataRaw);
-      const configRoot = configData["root"];
-      return configRoot;
+      configData["breakPoints"].sort((a, b) => a - b);
+      return configData;
     });
   }
 };
@@ -14265,8 +14269,9 @@ var import_chokidar = __toESM(require("chokidar"));
 var import_node_path2 = __toESM(require("path"));
 var reactFileExtensions = [".tsx", ".jsx"];
 var Watcher = class {
-  constructor(configRoot, fileProcessor) {
-    this.configRoot = configRoot;
+  constructor(config, fileProcessor) {
+    this.config = config;
+    this.configRoot = config["root"];
     this.fileProcessor = fileProcessor;
     this.init();
   }
@@ -14292,45 +14297,111 @@ var import_commander = require("commander");
 
 // src/CSSProcessor/CSSProcessor.ts
 var import_postcss = __toESM(require("postcss"));
-var import_postcss_media_query_parser = __toESM(require("postcss-media-query-parser"));
 var CSSProcessor = class {
-  constructor() {
+  constructor(config) {
+    this.config = config;
+    this.breakpoints = config["breakPoints"];
   }
   processCss(rawCss, cssFilePath, modifiedClasses) {
     const root = import_postcss.default.parse(rawCss, { from: cssFilePath });
     this.syncInOrder(modifiedClasses, root);
     return root.toResult();
   }
-  // The aim for now is to preserve
+  // The aim for now is to preserve classes that are not in use inside the jsx
+  // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames, root) {
-    const ruleMap = /* @__PURE__ */ new Map();
     const uniqueJSXClasses = [...new Set(classNames)];
-    root.walkRules((rule) => {
-      const name = rule.selector.replace(/^\./, "");
-      if (uniqueJSXClasses.includes(name)) {
-        ruleMap.set(name, rule);
-      }
-      rule.remove();
-    });
-    root.walkAtRules((atRule) => {
-      const media = (0, import_postcss_media_query_parser.default)(atRule.params);
-      if (media.type !== "media-query-list") {
+    const baseCssMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root);
+    console.log(baseCssMap);
+    const breakPointArr = ["INDIVIDUAL", ...this.breakpoints];
+    breakPointArr.forEach((breakpoint) => {
+      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
+      const ruleTypeMap = baseCssMap.get(mediaQueryParam);
+      if (mediaQueryParam === "INDIVIDUAL") {
+        this.appendClasses(ruleTypeMap, uniqueJSXClasses, root);
         return;
       }
-      console.log(media["type"]);
+      const mediaQueryRoot = new import_postcss.AtRule({ name: "media", params: mediaQueryParam, nodes: [] });
+      if (!ruleTypeMap) {
+        root.append(mediaQueryRoot);
+        return;
+      }
+      this.appendClasses(ruleTypeMap, uniqueJSXClasses, mediaQueryRoot);
+      root.append(mediaQueryRoot);
     });
-    uniqueJSXClasses.forEach((name) => {
-      if (ruleMap.has(name)) {
-        root.append(ruleMap.get(name));
-        ruleMap.delete(name);
+  }
+  groupClassesByMediaQuery(uniqueJSXClasses, root) {
+    const baseCssMap = /* @__PURE__ */ new Map();
+    this.extractAtRules(root, uniqueJSXClasses, baseCssMap);
+    this.extractRules(root, uniqueJSXClasses, baseCssMap);
+    return baseCssMap;
+  }
+  extractAtRules(root, uniqueJSXClasses, baseCssMap) {
+    root.walkAtRules((atRule) => {
+      const mediaQuery = atRule.params;
+      if (!baseCssMap.has(mediaQuery)) {
+        const ruleTypeMap2 = /* @__PURE__ */ new Map([
+          ["CORE", /* @__PURE__ */ new Map()],
+          ["OTHER", /* @__PURE__ */ new Map()]
+        ]);
+        baseCssMap.set(mediaQuery, ruleTypeMap2);
+      }
+      const ruleTypeMap = baseCssMap.get(mediaQuery);
+      atRule.walkRules((rule) => {
+        const selector = this.removeDotPrefix(rule.selector);
+        const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
+        const ruleMap = ruleTypeMap.get(ruleType);
+        ruleMap.set(selector, rule);
+        ruleTypeMap.set(ruleType, ruleMap);
+        rule.remove();
+      });
+      atRule.remove();
+    });
+  }
+  extractRules(root, uniqueJSXClasses, baseCssMap) {
+    if (!baseCssMap.has("INDIVIDUAL")) {
+      const ruleTypeMap = /* @__PURE__ */ new Map([
+        ["CORE", /* @__PURE__ */ new Map()],
+        ["OTHER", /* @__PURE__ */ new Map()]
+      ]);
+      baseCssMap.set("INDIVIDUAL", ruleTypeMap);
+    }
+    const individualMap = baseCssMap.get("INDIVIDUAL");
+    root.walkRules((rule) => {
+      var _a;
+      if (((_a = rule.parent) == null ? void 0 : _a.type) === "atrule") return;
+      const selector = this.removeDotPrefix(rule.selector);
+      const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
+      const ruleMap = individualMap.get(ruleType);
+      ruleMap.set(selector, rule);
+      individualMap.set(ruleType, ruleMap);
+      rule.remove();
+    });
+  }
+  appendClasses(mediaQuery, uniqueJSXClasses, root) {
+    const coreRules = mediaQuery.get("CORE");
+    const otherRules = mediaQuery.get("OTHER");
+    uniqueJSXClasses.forEach((selector) => {
+      if (coreRules.has(selector)) {
+        root.append(coreRules.get(selector));
+        coreRules.delete(selector);
       } else {
-        const newRule = new import_postcss.Rule({ selector: `.${name}` });
+        const newRule = new import_postcss.Rule({ selector: `.${selector}` });
         root.append(newRule);
       }
     });
-    ruleMap.forEach((rule) => {
+    otherRules.forEach((rule) => {
       root.append(rule);
     });
+  }
+  getMediaQueryParamForBreakpoint(breakpoint) {
+    if (breakpoint === "INDIVIDUAL") {
+      return "INDIVIDUAL";
+    }
+    return `(min-width: ${breakpoint}px)`;
+  }
+  removeDotPrefix(selector) {
+    return selector.replace(/^\./, "");
   }
 };
 
@@ -14339,11 +14410,11 @@ var program = new import_commander.Command();
 program.command("watch").action(() => __async(null, null, function* () {
   const jsxParser = new JSXParser();
   const fileUtils = new FileUtils();
-  const cssProcessor = new CSSProcessor();
   const config = new Config(fileUtils);
-  const configRoot = yield config.getConfig();
+  const configData = yield config.getConfig();
+  const cssProcessor = new CSSProcessor(configData);
   const fileProcessor = new FileProcessor(jsxParser, fileUtils, cssProcessor);
-  const watcher = new Watcher(configRoot, fileProcessor);
+  const watcher = new Watcher(configData, fileProcessor);
   watcher.setupWatch();
 }));
 program.parse();
