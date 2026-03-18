@@ -13,13 +13,14 @@ const program = new Command()
 program.command('watch').action(async () => {
   const jsxParser = new JSXParser()
   const fileUtils = new FileUtils()
-  const cssProcessor = new CSSProcessor()
 
   const config = new Config(fileUtils)
-  const configRoot = await config.getConfig()
+  const configData = await config.getConfig()
+
+  const cssProcessor = new CSSProcessor(configData)
 
   const fileProcessor = new FileProcessor(jsxParser, fileUtils, cssProcessor)
-  const watcher = new Watcher(configRoot, fileProcessor)
+  const watcher = new Watcher(configData, fileProcessor)
 
   watcher.setupWatch()
 })

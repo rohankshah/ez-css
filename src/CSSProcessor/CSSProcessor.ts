@@ -1,8 +1,14 @@
-import postcss, { Root, Rule } from 'postcss'
-import mediaParser from 'postcss-media-query-parser'
+import { configType } from '@/types/congif-types'
+import { BaseCssMapType, ruleTypeMap } from '@/types/css-processor-types'
+import postcss, { AtRule, Root, Rule } from 'postcss'
 
 export class CSSProcessor {
-  constructor() {}
+  config: configType
+  breakpoints: number[]
+  constructor(config: configType) {
+    this.config = config
+    this.breakpoints = config['breakPoints']
+  }
 
   processCss(rawCss: string, cssFilePath: string, modifiedClasses: string[]) {
     const root = postcss.parse(rawCss, { from: cssFilePath })
@@ -13,30 +19,40 @@ export class CSSProcessor {
   }
 
   // The aim for now is to preserve classes that are not in use inside the jsx
-  // Could expose this to the config later on
+  // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames: string[], root: Root) {
     const uniqueJSXClasses = [...new Set(classNames)]
-    const mediaQueryMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root)
+    const baseCssMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root)
 
-    console.log(mediaQueryMap)
+    console.log(baseCssMap)
     // Reinsert based on the jsx order
 
-    // uniqueJSXClasses.forEach((name) => {
-    //   if (ruleMap.has(name)) {
-    //     // If class existed before, then use the same one
-    //     root.append(ruleMap.get(name))
-    //     ruleMap.delete(name)
-    //   } else {
-    //     // If no existing class, then add a new empty class
-    //     const newRule = new Rule({ selector: `.${name}` })
-    //     root.append(newRule)
-    //   }
-    // })
+    const breakPointArr = ['INDIVIDUAL', ...this.breakpoints]
 
-    // // Add remaining classes at the bottom
-    // ruleMap.forEach((rule) => {
-    //   root.append(rule)
-    // })
+    breakPointArr.forEach((breakpoint) => {
+      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint)
+
+      const ruleTypeMap = baseCssMap.get(mediaQueryParam)
+
+      // Append individual classes directly to root
+      if (mediaQueryParam === 'INDIVIDUAL') {
+        this.appendClasses(ruleTypeMap, uniqueJSXClasses, root)
+        return
+      }
+
+      const mediaQueryRoot = new AtRule({ name: 'media', params: mediaQueryParam, nodes: [] })
+
+      // If no classes exist for mediaQuery, just append to root and go to next breakpoint
+      if (!ruleTypeMap) {
+        root.append(mediaQueryRoot)
+        return
+      }
+
+      this.appendClasses(ruleTypeMap, uniqueJSXClasses, mediaQueryRoot)
+      root.append(mediaQueryRoot)
+    })
+
+    // TODO: Find queries not in breakPointarr and append them to end
   }
 
   groupClassesByMediaQuery(uniqueJSXClasses: string[], root: Root) {
@@ -44,61 +60,63 @@ export class CSSProcessor {
     // OTHERS will be used to track those classes that are not mentioned in the JSX
 
     // MediaQuery => RuleType (CORE/OTHER) => RuleMapArr
-    const mediaQueryMap = new Map<string, Map<string, Map<string, Rule>[]>>()
+
+    const baseCssMap: BaseCssMapType = new Map()
 
     // Loop media queries and get classes
-    this.extractAtRules(root, uniqueJSXClasses, mediaQueryMap)
-    this.extractRules(root, uniqueJSXClasses, mediaQueryMap)
+    this.extractAtRules(root, uniqueJSXClasses, baseCssMap)
+    this.extractRules(root, uniqueJSXClasses, baseCssMap)
 
-    return mediaQueryMap
+    return baseCssMap
   }
 
-  extractAtRules(root: Root, uniqueJSXClasses: string[], mediaQueryMap: Map<string, Map<string, Map<string, Rule>[]>>) {
+  extractAtRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
     root.walkAtRules((atRule) => {
       const mediaQuery = atRule.params
 
+      // console.log(atRule.name, ' : ', atRule.params)
+
       // Ensure mediaQuery map exists
-      if (!mediaQueryMap.has(mediaQuery)) {
-        mediaQueryMap.set(
-          mediaQuery,
-          new Map<string, Map<string, Rule>[]>([
-            ['CORE', []],
-            ['OTHER', []]
-          ])
-        )
+      if (!baseCssMap.has(mediaQuery)) {
+        const ruleTypeMap: ruleTypeMap = new Map([
+          ['CORE', new Map()],
+          ['OTHER', new Map()]
+        ])
+
+        baseCssMap.set(mediaQuery, ruleTypeMap)
       }
 
-      const ruleTypeMap = mediaQueryMap.get(mediaQuery)
+      const ruleTypeMap = baseCssMap.get(mediaQuery)
 
       atRule.walkRules((rule) => {
         const selector = this.removeDotPrefix(rule.selector)
 
         const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
 
-        const ruleMapArr = ruleTypeMap.get(ruleType)!
+        const ruleMap = ruleTypeMap.get(ruleType)
 
-        const ruleMap = new Map<string, Rule>()
         ruleMap.set(selector, rule)
 
-        ruleMapArr.push(ruleMap)
+        ruleTypeMap.set(ruleType, ruleMap)
 
-        // rule.remove()
+        rule.remove()
       })
+
+      atRule.remove()
     })
   }
 
-  extractRules(root: Root, uniqueJSXClasses: string[], mediaQueryMap: Map<string, Map<string, Map<string, Rule>[]>>) {
-    if (!mediaQueryMap.has('INDIVIDUAL')) {
-      mediaQueryMap.set(
-        'INDIVIDUAL',
-        new Map([
-          ['CORE', []],
-          ['OTHER', []]
-        ])
-      )
+  extractRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
+    if (!baseCssMap.has('INDIVIDUAL')) {
+      const ruleTypeMap: ruleTypeMap = new Map([
+        ['CORE', new Map()],
+        ['OTHER', new Map()]
+      ])
+
+      baseCssMap.set('INDIVIDUAL', ruleTypeMap)
     }
 
-    const individualMap = mediaQueryMap.get('INDIVIDUAL')!
+    const individualMap = baseCssMap.get('INDIVIDUAL')!
 
     // Loop individual classes
     root.walkRules((rule) => {
@@ -108,15 +126,43 @@ export class CSSProcessor {
 
       const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
 
-      const ruleArr = individualMap.get(ruleType)!
+      const ruleMap = individualMap.get(ruleType)!
 
-      const ruleMap = new Map<string, Rule>()
       ruleMap.set(selector, rule)
 
-      ruleArr.push(ruleMap)
+      individualMap.set(ruleType, ruleMap)
 
-      // rule.remove()
+      rule.remove()
     })
+  }
+
+  appendClasses(mediaQuery: ruleTypeMap, uniqueJSXClasses: string[], root: Root | AtRule) {
+    const coreRules = mediaQuery.get('CORE')
+    const otherRules = mediaQuery.get('OTHER')
+
+    uniqueJSXClasses.forEach((selector) => {
+      if (coreRules.has(selector)) {
+        // If class existed before, then use the same one
+        root.append(coreRules.get(selector))
+        coreRules.delete(selector)
+      } else {
+        // If no existing class, then add a new empty class
+        const newRule = new Rule({ selector: `.${selector}` })
+        root.append(newRule)
+      }
+    })
+
+    otherRules.forEach((rule) => {
+      root.append(rule)
+    })
+  }
+
+  getMediaQueryParamForBreakpoint(breakpoint: string | number) {
+    if (breakpoint === 'INDIVIDUAL') {
+      return 'INDIVIDUAL'
+    }
+
+    return `(min-width: ${breakpoint}px)`
   }
 
   removeDotPrefix(selector: string) {

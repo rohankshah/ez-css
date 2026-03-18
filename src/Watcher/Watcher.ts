@@ -1,16 +1,19 @@
 import { FileProcessor } from '@/FileProcessor/FileProcessor'
+import { configType } from '@/types/congif-types'
 import chokidar, { FSWatcher } from 'chokidar'
 import path from 'node:path'
 
 const reactFileExtensions = ['.tsx', '.jsx']
 
 export class Watcher {
-  configRoot: string | null
+  config: configType
+  configRoot: string
   watcher: FSWatcher | null
   fileProcessor: FileProcessor
 
-  constructor(configRoot: string, fileProcessor: FileProcessor) {
-    this.configRoot = configRoot
+  constructor(config: configType, fileProcessor: FileProcessor) {
+    this.config = config
+    this.configRoot = config['root']
     this.fileProcessor = fileProcessor
     this.init()
   }
