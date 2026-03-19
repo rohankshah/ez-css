@@ -1,7 +1,13 @@
 import { Rule } from 'postcss'
 
-type ruleType = 'CORE' | 'OTHER'
+type RuleType = 'CORE' | 'OTHER'
 
-type ruleMap = Map<string, Rule>
-export type ruleTypeMap = Map<ruleType, ruleMap>
-export type BaseCssMapType = Map<string, ruleTypeMap>
+type RuleMap = Map<string, Rule>
+export type RuleTypeMap = Map<RuleType, RuleMap>
+
+type BaseCssEntry = {
+  ruleTypeMap: RuleTypeMap
+  atRuleName?: string
+}
+
+export type BaseCssMapType = Map<string, BaseCssEntry>
