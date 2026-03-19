@@ -18,6 +18,8 @@ export class FileProcessor {
 
     const classes = this.jsxParser.getClassesForFile(fileData)
 
+    const uniqueClasses = [...new Set(classes)]
+
     const cssFilePath = filePath.replace(path.extname(filePath), '.css')
 
     // Check if CSS file exists, if not then create one
@@ -31,7 +33,7 @@ export class FileProcessor {
     const rawCss = await readUtf8File(cssFilePath)
 
     // Process CSS
-    const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes)
+    const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, uniqueClasses)
 
     const formatted = await prettier.format(processedCss.css, {
       parser: 'css'

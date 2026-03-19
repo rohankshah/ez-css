@@ -36,9 +36,7 @@ describe('CSS Processor', () => {
 
     const uniqueJSXClasses = ['a']
 
-    let baseCssMap: BaseCssMapType = new Map()
-
-    processor.initializeBaseCssMap(baseCssMap)
+    const baseCssMap = processor.initializeBaseCssMap()
 
     processor.extractAtRules(root, uniqueJSXClasses, baseCssMap)
 

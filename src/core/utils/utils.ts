@@ -51,5 +51,8 @@ async function getConfig() {
   return configData
 }
 
+function removeDotPrefix(selector: string) {
+  return selector.replace(/^\./, '')
+}
 
-export { checkIfFileExists, createEmptyFile, writeFile, writeUtf8File, readUtf8File, getConfig }
+export { checkIfFileExists, createEmptyFile, writeFile, writeUtf8File, readUtf8File, getConfig, removeDotPrefix }

@@ -1,6 +1,9 @@
+import { removeDotPrefix } from '@/core/utils/utils'
 import { configType } from '@/types/congif-types'
-import { BaseCssMapType, RuleTypeMap } from '@/types/css-processor-types'
+import { BaseCssEntry, BaseCssMapType, RuleTypeMap } from '@/types/css-processor-types'
 import postcss, { AtRule, Root, Rule } from 'postcss'
+
+const INDIVIDUAL = 'INDIVIDUAL'
 
 export class CSSProcessor {
   config: configType
@@ -21,109 +24,96 @@ export class CSSProcessor {
   // The aim for now is to preserve classes that are not in use inside the jsx
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames: string[], root: Root) {
-    const uniqueJSXClasses = [...new Set(classNames)]
-    const baseCssMap = this.groupClassesByAtRules(uniqueJSXClasses, root)
+    const baseCssMap = this.groupClassesByAtRules(classNames, root)
 
     // Reinsert based on the jsx order
-    this.appendBaseMap(baseCssMap, uniqueJSXClasses, root)
+    this.appendBaseMap(baseCssMap, classNames, root)
   }
 
-  groupClassesByAtRules(uniqueJSXClasses: string[], root: Root) {
-    const baseCssMap: BaseCssMapType = new Map()
+  groupClassesByAtRules(classNames: string[], root: Root) {
+    const baseCssMap = this.initializeBaseCssMap()
 
-    this.initializeBaseCssMap(baseCssMap)
-
-    this.extractAtRules(root, uniqueJSXClasses, baseCssMap)
-    this.extractRules(root, uniqueJSXClasses, baseCssMap)
+    this.extractAtRules(root, classNames, baseCssMap)
+    this.extractRules(root, classNames, baseCssMap)
 
     return baseCssMap
   }
 
-  initializeBaseCssMap(baseCssMap: BaseCssMapType) {
-    ['INDIVIDUAL', ...this.breakpoints].forEach((breakpoint) => {
-      const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint)
-      const ruleTypeMap: RuleTypeMap = new Map([
-        ['CORE', new Map()],
-        ['OTHER', new Map()]
-      ])
+  initializeBaseCssMap() {
+    const baseCssMap: BaseCssMapType = new Map()
 
-      baseCssMap.set(baseCssKey, { ruleTypeMap, atRuleName: 'media' })
+    const keys = [INDIVIDUAL, ...this.breakpoints]
+
+    keys.forEach((breakpoint) => {
+      const atRuleParam = this.getBaseCssMapKeyByParam(breakpoint)
+      this.addAtRuleParamToMap(baseCssMap, atRuleParam, 'media')
     })
+
+    return baseCssMap
   }
 
-  extractAtRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
+  extractAtRules(root: Root, classNames: string[], baseCssMap: BaseCssMapType) {
     root.walkAtRules((atRule) => {
       const atRuleParam = atRule.params
 
       // Ensure basecssmap key exists
       if (!baseCssMap.has(atRuleParam)) {
-        const ruleTypeMap: RuleTypeMap = new Map([
-          ['CORE', new Map()],
-          ['OTHER', new Map()]
-        ])
-
-        baseCssMap.set(atRuleParam, { ruleTypeMap, atRuleName: atRule.name })
+        this.addAtRuleParamToMap(baseCssMap, atRuleParam, atRule.name)
       }
 
       const entry = baseCssMap.get(atRuleParam)
 
       atRule.walkRules((rule) => {
-        const selector = this.removeDotPrefix(rule.selector)
-
-        const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
-
-        const ruleMap = entry?.ruleTypeMap.get(ruleType)
-
-        ruleMap.set(selector, rule)
-
-        entry?.ruleTypeMap.set(ruleType, ruleMap)
-
-        rule.remove()
+        this.processRule(rule, classNames, entry)
       })
 
       atRule.remove()
     })
   }
 
-  extractRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
-    if (!baseCssMap.has('INDIVIDUAL')) {
-      const ruleTypeMap: RuleTypeMap = new Map([
-        ['CORE', new Map()],
-        ['OTHER', new Map()]
-      ])
+  extractRules(root: Root, classNames: string[], baseCssMap: BaseCssMapType) {
+    const entry = baseCssMap.get(INDIVIDUAL)!
 
-      baseCssMap.set('INDIVIDUAL', { ruleTypeMap })
-    }
-
-    const entry = baseCssMap.get('INDIVIDUAL')!
-
-    // Loop individual classes
+    // Loop INDIVIDUAL classes
     root.walkRules((rule) => {
       if (rule.parent?.type === 'atrule') return
 
-      const selector = this.removeDotPrefix(rule.selector)
-
-      const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
-
-      const ruleMap = entry?.ruleTypeMap.get(ruleType)!
-
-      ruleMap.set(selector, rule)
-
-      entry?.ruleTypeMap.set(ruleType, ruleMap)
-
-      rule.remove()
+      this.processRule(rule, classNames, entry)
     })
   }
 
-  appendBaseMap(baseCssMap: BaseCssMapType, uniqueJSXClasses: string[], root: Root) {
+  processRule(rule: Rule, classNames: string[], entry: BaseCssEntry) {
+    const selector = removeDotPrefix(rule.selector)
+
+    const ruleType = classNames.includes(selector) ? 'CORE' : 'OTHER'
+
+    const ruleMap = entry?.ruleTypeMap.get(ruleType)!
+
+    ruleMap.set(selector, rule)
+
+    entry?.ruleTypeMap.set(ruleType, ruleMap)
+
+    rule.remove()
+  }
+
+  addAtRuleParamToMap(baseCssMap: BaseCssMapType, atRuleParam: string, atRuleName: string) {
+    const ruleTypeMap: RuleTypeMap = new Map([
+      ['CORE', new Map()],
+      ['OTHER', new Map()]
+    ])
+
+    baseCssMap.set(atRuleParam, { ruleTypeMap, atRuleName: atRuleName })
+  }
+
+  appendBaseMap(baseCssMap: BaseCssMapType, classNames: string[], root: Root) {
     for (const [breakpoint] of baseCssMap) {
-      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint)
+      this.addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint)
     }
   }
 
   addBreakpointClassesToRoot(
     baseCssMap: BaseCssMapType,
-    uniqueJSXClasses: string[],
+    classNames: string[],
     root: Root,
     breakpoint: string | number
   ) {
@@ -132,21 +122,15 @@ export class CSSProcessor {
     const entry = baseCssMap.get(baseCssKey)
     const ruleTypeMap = entry?.ruleTypeMap
 
-    // Append individual classes directly to root
-    if (baseCssKey === 'INDIVIDUAL') {
-      this.appendClasses(ruleTypeMap, uniqueJSXClasses, root, baseCssKey)
+    // Append INDIVIDUAL classes directly to root
+    if (baseCssKey === INDIVIDUAL) {
+      this.appendClasses(ruleTypeMap, classNames, root, baseCssKey)
       return
     }
 
-    const atRuleName = entry?.atRuleName
+    const atRuleName = entry?.atRuleName ? entry?.atRuleName : 'media'
 
-    let atRule: AtRule
-
-    if (atRuleName) {
-      atRule = new AtRule({ name: atRuleName, params: baseCssKey, nodes: [] })
-    } else {
-      atRule = new AtRule({ name: 'media', params: baseCssKey, nodes: [] })
-    }
+    const atRule = new AtRule({ name: atRuleName, params: baseCssKey, nodes: [] })
 
     // If no classes exist for atRule param, just append to root and go to next breakpoint
     if (!ruleTypeMap) {
@@ -154,23 +138,23 @@ export class CSSProcessor {
       return
     }
 
-    this.appendClasses(ruleTypeMap, uniqueJSXClasses, atRule, baseCssKey)
+    this.appendClasses(ruleTypeMap, classNames, atRule, baseCssKey)
     root.append(atRule)
   }
 
-  appendClasses(ruleTypeMap: RuleTypeMap, uniqueJSXClasses: string[], root: Root | AtRule, atRuleParam: string) {
+  appendClasses(ruleTypeMap: RuleTypeMap, classNames: string[], root: Root | AtRule, atRuleParam: string) {
     const coreRules = ruleTypeMap.get('CORE')
     const otherRules = ruleTypeMap.get('OTHER')
 
-    uniqueJSXClasses.forEach((selector) => {
+    classNames.forEach((selector) => {
       if (coreRules.has(selector)) {
         // If class existed before, then use the same one
         root.append(coreRules.get(selector))
         coreRules.delete(selector)
       } else {
-        if (atRuleParam === 'INDIVIDUAL') {
+        if (atRuleParam === INDIVIDUAL) {
           // If no existing class, then add a new empty class.
-          // Only for individual classes. Maybe add to config
+          // Only for INDIVIDUAL classes. Maybe add setting to config
           const newRule = new Rule({ selector: `.${selector}` })
           root.append(newRule)
         }
@@ -183,8 +167,8 @@ export class CSSProcessor {
   }
 
   getBaseCssMapKeyByParam(breakpoint: string | number) {
-    if (breakpoint === 'INDIVIDUAL') {
-      return 'INDIVIDUAL'
+    if (breakpoint === INDIVIDUAL) {
+      return INDIVIDUAL
     }
 
     // For any other atRules that are not in the config
@@ -193,9 +177,5 @@ export class CSSProcessor {
     }
 
     return `(min-width: ${breakpoint}px)`
-  }
-
-  removeDotPrefix(selector: string) {
-    return selector.replace(/^\./, '')
   }
 }
