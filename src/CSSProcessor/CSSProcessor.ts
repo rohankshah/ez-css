@@ -38,6 +38,8 @@ export class CSSProcessor {
 
     const baseCssMap: BaseCssMapType = new Map()
 
+    this.initializeBaseCssMap(baseCssMap)
+
     // Loop media queries and get classes
     this.extractAtRules(root, uniqueJSXClasses, baseCssMap)
     this.extractRules(root, uniqueJSXClasses, baseCssMap)
@@ -45,9 +47,20 @@ export class CSSProcessor {
     return baseCssMap
   }
 
+  initializeBaseCssMap(baseCssMap: BaseCssMapType) {
+    ['INDIVIDUAL', ...this.breakpoints].forEach((breakpoint) => {
+      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint)
+      const ruleTypeMap: RuleTypeMap = new Map([
+        ['CORE', new Map()],
+        ['OTHER', new Map()]
+      ])
+
+      baseCssMap.set(mediaQueryParam, { ruleTypeMap, atRuleName: 'media' })
+    })
+  }
+
   extractAtRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
     root.walkAtRules((atRule) => {
-      // console.log(atRule.name, ' ', atRule.params)
       const mediaQuery = atRule.params
 
       // Ensure mediaQuery map exists
@@ -111,21 +124,8 @@ export class CSSProcessor {
   }
 
   appendBaseMap(baseCssMap: BaseCssMapType, uniqueJSXClasses: string[], root: Root) {
-    const breakPointArr = ['INDIVIDUAL', ...this.breakpoints]
-    const addedBreakpoints = []
-
-    breakPointArr.forEach((breakpoint) => {
-      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint)
-
-      addedBreakpoints.push(breakpoint)
-    })
-
-    // TODO: Find queries not in breakPointarr and append them to end
     for (const [breakpoint] of baseCssMap) {
-      if (!addedBreakpoints.includes(breakpoint)) {
-        this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint)
-        addedBreakpoints.push(breakpoint)
-      }
+      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint)
     }
   }
 

@@ -14317,9 +14317,20 @@ var CSSProcessor = class {
   }
   groupClassesByMediaQuery(uniqueJSXClasses, root) {
     const baseCssMap = /* @__PURE__ */ new Map();
+    this.initializeBaseCssMap(baseCssMap);
     this.extractAtRules(root, uniqueJSXClasses, baseCssMap);
     this.extractRules(root, uniqueJSXClasses, baseCssMap);
     return baseCssMap;
+  }
+  initializeBaseCssMap(baseCssMap) {
+    ["INDIVIDUAL", ...this.breakpoints].forEach((breakpoint) => {
+      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
+      const ruleTypeMap = /* @__PURE__ */ new Map([
+        ["CORE", /* @__PURE__ */ new Map()],
+        ["OTHER", /* @__PURE__ */ new Map()]
+      ]);
+      baseCssMap.set(mediaQueryParam, { ruleTypeMap, atRuleName: "media" });
+    });
   }
   extractAtRules(root, uniqueJSXClasses, baseCssMap) {
     root.walkAtRules((atRule) => {
@@ -14364,17 +14375,8 @@ var CSSProcessor = class {
     });
   }
   appendBaseMap(baseCssMap, uniqueJSXClasses, root) {
-    const breakPointArr = ["INDIVIDUAL", ...this.breakpoints];
-    const addedBreakpoints = [];
-    breakPointArr.forEach((breakpoint) => {
-      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint);
-      addedBreakpoints.push(breakpoint);
-    });
     for (const [breakpoint] of baseCssMap) {
-      if (!addedBreakpoints.includes(breakpoint)) {
-        this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint);
-        addedBreakpoints.push(breakpoint);
-      }
+      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint);
     }
   }
   addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint) {
