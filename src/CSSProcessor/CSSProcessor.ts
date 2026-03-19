@@ -47,9 +47,8 @@ export class CSSProcessor {
 
   extractAtRules(root: Root, uniqueJSXClasses: string[], baseCssMap: BaseCssMapType) {
     root.walkAtRules((atRule) => {
+      // console.log(atRule.name, ' ', atRule.params)
       const mediaQuery = atRule.params
-
-      // console.log(atRule.name, ' : ', atRule.params)
 
       // Ensure mediaQuery map exists
       if (!baseCssMap.has(mediaQuery)) {
@@ -58,21 +57,21 @@ export class CSSProcessor {
           ['OTHER', new Map()]
         ])
 
-        baseCssMap.set(mediaQuery, ruleTypeMap)
+        baseCssMap.set(mediaQuery, { ruleTypeMap, atRuleName: atRule.name })
       }
 
-      const ruleTypeMap = baseCssMap.get(mediaQuery)
+      const entry = baseCssMap.get(mediaQuery)
 
       atRule.walkRules((rule) => {
         const selector = this.removeDotPrefix(rule.selector)
 
         const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
 
-        const ruleMap = ruleTypeMap.get(ruleType)
+        const ruleMap = entry?.ruleTypeMap.get(ruleType)
 
         ruleMap.set(selector, rule)
 
-        ruleTypeMap.set(ruleType, ruleMap)
+        entry?.ruleTypeMap.set(ruleType, ruleMap)
 
         rule.remove()
       })
@@ -88,10 +87,10 @@ export class CSSProcessor {
         ['OTHER', new Map()]
       ])
 
-      baseCssMap.set('INDIVIDUAL', ruleTypeMap)
+      baseCssMap.set('INDIVIDUAL', { ruleTypeMap })
     }
 
-    const individualMap = baseCssMap.get('INDIVIDUAL')!
+    const entry = baseCssMap.get('INDIVIDUAL')!
 
     // Loop individual classes
     root.walkRules((rule) => {
@@ -101,11 +100,11 @@ export class CSSProcessor {
 
       const ruleType = uniqueJSXClasses.includes(selector) ? 'CORE' : 'OTHER'
 
-      const ruleMap = individualMap.get(ruleType)!
+      const ruleMap = entry?.ruleTypeMap.get(ruleType)!
 
       ruleMap.set(selector, rule)
 
-      individualMap.set(ruleType, ruleMap)
+      entry?.ruleTypeMap.set(ruleType, ruleMap)
 
       rule.remove()
     })
@@ -138,7 +137,8 @@ export class CSSProcessor {
   ) {
     const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint)
 
-    const ruleTypeMap = baseCssMap.get(mediaQueryParam)
+    const entry = baseCssMap.get(mediaQueryParam)
+    const ruleTypeMap = entry?.ruleTypeMap
 
     // Append individual classes directly to root
     if (mediaQueryParam === 'INDIVIDUAL') {
@@ -146,16 +146,24 @@ export class CSSProcessor {
       return
     }
 
-    const mediaQueryRoot = new AtRule({ name: 'media', params: mediaQueryParam, nodes: [] })
+    const atRuleName = entry?.atRuleName
+
+    let atRule: AtRule
+
+    if (atRuleName) {
+      atRule = new AtRule({ name: atRuleName, params: mediaQueryParam, nodes: [] })
+    } else {
+      atRule = new AtRule({ name: 'media', params: mediaQueryParam, nodes: [] })
+    }
 
     // If no classes exist for mediaQuery, just append to root and go to next breakpoint
     if (!ruleTypeMap) {
-      root.append(mediaQueryRoot)
+      root.append(atRule)
       return
     }
 
-    this.appendClasses(ruleTypeMap, uniqueJSXClasses, mediaQueryRoot, mediaQueryParam)
-    root.append(mediaQueryRoot)
+    this.appendClasses(ruleTypeMap, uniqueJSXClasses, atRule, mediaQueryParam)
+    root.append(atRule)
   }
 
   appendClasses(mediaQuery: RuleTypeMap, uniqueJSXClasses: string[], root: Root | AtRule, mediaQueryParam: string) {
