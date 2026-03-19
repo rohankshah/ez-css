@@ -11,9 +11,10 @@
     "ez-css": "./dist/cli.js"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsup src/cli.ts --watch",
-    "build": "tsup src/cli.ts"
+    "build": "tsup src/cli.ts",
+    "test": "vitest",
+    "test:watch": "vitest --watch"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +24,8 @@
     "@types/node": "^25.3.5",
     "@types/postcss-media-query-parser": "^0.2.4",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@babel/parser": "^7.29.0",

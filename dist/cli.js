@@ -14299,6 +14299,7 @@ var import_commander = require("commander");
 var import_postcss = __toESM(require("postcss"));
 var CSSProcessor = class {
   constructor(config) {
+    console.log(config);
     this.config = config;
     this.breakpoints = config["breakPoints"];
   }
@@ -14311,11 +14312,10 @@ var CSSProcessor = class {
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames, root) {
     const uniqueJSXClasses = [...new Set(classNames)];
-    const baseCssMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root);
-    console.log(baseCssMap);
+    const baseCssMap = this.groupClassesByAtRules(uniqueJSXClasses, root);
     this.appendBaseMap(baseCssMap, uniqueJSXClasses, root);
   }
-  groupClassesByMediaQuery(uniqueJSXClasses, root) {
+  groupClassesByAtRules(uniqueJSXClasses, root) {
     const baseCssMap = /* @__PURE__ */ new Map();
     this.initializeBaseCssMap(baseCssMap);
     this.extractAtRules(root, uniqueJSXClasses, baseCssMap);
@@ -14324,25 +14324,25 @@ var CSSProcessor = class {
   }
   initializeBaseCssMap(baseCssMap) {
     ["INDIVIDUAL", ...this.breakpoints].forEach((breakpoint) => {
-      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
+      const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint);
       const ruleTypeMap = /* @__PURE__ */ new Map([
         ["CORE", /* @__PURE__ */ new Map()],
         ["OTHER", /* @__PURE__ */ new Map()]
       ]);
-      baseCssMap.set(mediaQueryParam, { ruleTypeMap, atRuleName: "media" });
+      baseCssMap.set(baseCssKey, { ruleTypeMap, atRuleName: "media" });
     });
   }
   extractAtRules(root, uniqueJSXClasses, baseCssMap) {
     root.walkAtRules((atRule) => {
-      const mediaQuery = atRule.params;
-      if (!baseCssMap.has(mediaQuery)) {
+      const atRuleParam = atRule.params;
+      if (!baseCssMap.has(atRuleParam)) {
         const ruleTypeMap = /* @__PURE__ */ new Map([
           ["CORE", /* @__PURE__ */ new Map()],
           ["OTHER", /* @__PURE__ */ new Map()]
         ]);
-        baseCssMap.set(mediaQuery, { ruleTypeMap, atRuleName: atRule.name });
+        baseCssMap.set(atRuleParam, { ruleTypeMap, atRuleName: atRule.name });
       }
-      const entry = baseCssMap.get(mediaQuery);
+      const entry = baseCssMap.get(atRuleParam);
       atRule.walkRules((rule) => {
         const selector = this.removeDotPrefix(rule.selector);
         const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
@@ -14380,36 +14380,36 @@ var CSSProcessor = class {
     }
   }
   addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint) {
-    const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
-    const entry = baseCssMap.get(mediaQueryParam);
+    const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint);
+    const entry = baseCssMap.get(baseCssKey);
     const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
-    if (mediaQueryParam === "INDIVIDUAL") {
-      this.appendClasses(ruleTypeMap, uniqueJSXClasses, root, mediaQueryParam);
+    if (baseCssKey === "INDIVIDUAL") {
+      this.appendClasses(ruleTypeMap, uniqueJSXClasses, root, baseCssKey);
       return;
     }
     const atRuleName = entry == null ? void 0 : entry.atRuleName;
     let atRule;
     if (atRuleName) {
-      atRule = new import_postcss.AtRule({ name: atRuleName, params: mediaQueryParam, nodes: [] });
+      atRule = new import_postcss.AtRule({ name: atRuleName, params: baseCssKey, nodes: [] });
     } else {
-      atRule = new import_postcss.AtRule({ name: "media", params: mediaQueryParam, nodes: [] });
+      atRule = new import_postcss.AtRule({ name: "media", params: baseCssKey, nodes: [] });
     }
     if (!ruleTypeMap) {
       root.append(atRule);
       return;
     }
-    this.appendClasses(ruleTypeMap, uniqueJSXClasses, atRule, mediaQueryParam);
+    this.appendClasses(ruleTypeMap, uniqueJSXClasses, atRule, baseCssKey);
     root.append(atRule);
   }
-  appendClasses(mediaQuery, uniqueJSXClasses, root, mediaQueryParam) {
-    const coreRules = mediaQuery.get("CORE");
-    const otherRules = mediaQuery.get("OTHER");
+  appendClasses(ruleTypeMap, uniqueJSXClasses, root, atRuleParam) {
+    const coreRules = ruleTypeMap.get("CORE");
+    const otherRules = ruleTypeMap.get("OTHER");
     uniqueJSXClasses.forEach((selector) => {
       if (coreRules.has(selector)) {
         root.append(coreRules.get(selector));
         coreRules.delete(selector);
       } else {
-        if (mediaQueryParam === "INDIVIDUAL") {
+        if (atRuleParam === "INDIVIDUAL") {
           const newRule = new import_postcss.Rule({ selector: `.${selector}` });
           root.append(newRule);
         }
@@ -14419,7 +14419,7 @@ var CSSProcessor = class {
       root.append(rule);
     });
   }
-  getMediaQueryParamForBreakpoint(breakpoint) {
+  getBaseCssMapKeyByParam(breakpoint) {
     if (breakpoint === "INDIVIDUAL") {
       return "INDIVIDUAL";
     }
