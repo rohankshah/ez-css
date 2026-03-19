@@ -14110,30 +14110,84 @@ var require_lib3 = __commonJS({
   }
 });
 
+// src/core/utils/utils.ts
+var import_promises = require("fs/promises");
+function checkIfFileExists(pathToCheck) {
+  return __async(this, null, function* () {
+    try {
+      const stats = yield (0, import_promises.stat)(pathToCheck);
+      return stats.isFile();
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+  });
+}
+function createEmptyFile(filePath) {
+  return __async(this, null, function* () {
+    try {
+      const fileHandle = yield (0, import_promises.open)(filePath, "w");
+      yield fileHandle.close();
+    } catch (err) {
+      console.error(err);
+    }
+  });
+}
+function writeUtf8File(cssFilePath, result) {
+  return __async(this, null, function* () {
+    yield (0, import_promises.writeFile)(cssFilePath, result, "utf8");
+  });
+}
+function readUtf8File(filePath) {
+  return __async(this, null, function* () {
+    const fileData = yield (0, import_promises.readFile)(filePath, "utf8");
+    return fileData;
+  });
+}
+function getConfig() {
+  return __async(this, null, function* () {
+    const runPath = process.env.INIT_CWD;
+    const configPath = runPath + "/.ez-css-config.json";
+    const configExists = yield checkIfFileExists(configPath);
+    if (!configExists) {
+      throw "Config not found";
+    }
+    const configDataRaw = yield readUtf8File(configPath);
+    const configData = JSON.parse(configDataRaw);
+    configData["breakPoints"].sort((a, b) => a - b);
+    return configData;
+  });
+}
+function removeDotPrefix(selector) {
+  return selector.replace(/^\./, "");
+}
+
 // src/FileProcessor/FileProcessor.ts
 var import_node_path = __toESM(require("path"));
 var import_prettier = __toESM(require("prettier"));
 var FileProcessor = class {
-  constructor(jsxParser, fileUtils, cssProcessor) {
+  constructor(jsxParser, cssProcessor) {
     this.jsxParser = jsxParser;
-    this.fileUtils = fileUtils;
     this.cssProcessor = cssProcessor;
   }
   processFile(filePath) {
     return __async(this, null, function* () {
-      const fileData = yield this.fileUtils.readUtf8File(filePath);
+      const fileData = yield readUtf8File(filePath);
       const classes = this.jsxParser.getClassesForFile(fileData);
+      const uniqueClasses = [...new Set(classes)];
       const cssFilePath = filePath.replace(import_node_path.default.extname(filePath), ".css");
-      const cssFileExists = yield this.fileUtils.checkIfFileExists(cssFilePath);
+      const cssFileExists = yield checkIfFileExists(cssFilePath);
       if (!cssFileExists) {
-        yield this.fileUtils.createEmptyFile(cssFilePath);
+        yield createEmptyFile(cssFilePath);
       }
-      const rawCss = yield this.fileUtils.readUtf8File(cssFilePath);
-      const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, classes);
+      const rawCss = yield readUtf8File(cssFilePath);
+      const processedCss = this.cssProcessor.processCss(rawCss, cssFilePath, uniqueClasses);
       const formatted = yield import_prettier.default.format(processedCss.css, {
         parser: "css"
       });
-      yield this.fileUtils.writeFile(cssFilePath, formatted);
+      yield writeUtf8File(cssFilePath, formatted);
     });
   }
 };
@@ -14202,68 +14256,6 @@ var JSXParser = class {
   }
 };
 
-// src/core/FileUtils/FileUtils.ts
-var import_promises = require("fs/promises");
-var FileUtils = class {
-  constructor() {
-  }
-  checkIfFileExists(pathToCheck) {
-    return __async(this, null, function* () {
-      try {
-        const stats = yield (0, import_promises.stat)(pathToCheck);
-        return stats.isFile();
-      } catch (error) {
-        if (error.code === "ENOENT") {
-          return false;
-        }
-        throw error;
-      }
-    });
-  }
-  createEmptyFile(filePath) {
-    return __async(this, null, function* () {
-      try {
-        const fileHandle = yield (0, import_promises.open)(filePath, "w");
-        yield fileHandle.close();
-      } catch (err) {
-        console.error(err);
-      }
-    });
-  }
-  writeFile(cssFilePath, result) {
-    return __async(this, null, function* () {
-      yield (0, import_promises.writeFile)(cssFilePath, result, "utf8");
-    });
-  }
-  readUtf8File(filePath) {
-    return __async(this, null, function* () {
-      const fileData = yield (0, import_promises.readFile)(filePath, "utf8");
-      return fileData;
-    });
-  }
-};
-
-// src/core/Utils/config.ts
-var Config = class {
-  constructor(fileUtils) {
-    this.fileUtils = fileUtils;
-  }
-  getConfig() {
-    return __async(this, null, function* () {
-      const runPath = process.env.INIT_CWD;
-      const configPath = runPath + "/.ez-css-config.json";
-      const configExists = yield this.fileUtils.checkIfFileExists(configPath);
-      if (!configExists) {
-        throw "Config not found";
-      }
-      const configDataRaw = yield this.fileUtils.readUtf8File(configPath);
-      const configData = JSON.parse(configDataRaw);
-      configData["breakPoints"].sort((a, b) => a - b);
-      return configData;
-    });
-  }
-};
-
 // src/Watcher/Watcher.ts
 var import_chokidar = __toESM(require("chokidar"));
 var import_node_path2 = __toESM(require("path"));
@@ -14292,11 +14284,9 @@ var Watcher = class {
   }
 };
 
-// src/cli.ts
-var import_commander = require("commander");
-
 // src/CSSProcessor/CSSProcessor.ts
 var import_postcss = __toESM(require("postcss"));
+var INDIVIDUAL = "INDIVIDUAL";
 var CSSProcessor = class {
   constructor(config) {
     this.config = config;
@@ -14310,106 +14300,91 @@ var CSSProcessor = class {
   // The aim for now is to preserve classes that are not in use inside the jsx
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames, root) {
-    const uniqueJSXClasses = [...new Set(classNames)];
-    const baseCssMap = this.groupClassesByMediaQuery(uniqueJSXClasses, root);
-    console.log(baseCssMap);
-    this.appendBaseMap(baseCssMap, uniqueJSXClasses, root);
+    const baseCssMap = this.groupClassesByAtRules(classNames, root);
+    this.appendBaseMap(baseCssMap, classNames, root);
   }
-  groupClassesByMediaQuery(uniqueJSXClasses, root) {
-    const baseCssMap = /* @__PURE__ */ new Map();
-    this.initializeBaseCssMap(baseCssMap);
-    this.extractAtRules(root, uniqueJSXClasses, baseCssMap);
-    this.extractRules(root, uniqueJSXClasses, baseCssMap);
+  groupClassesByAtRules(classNames, root) {
+    const baseCssMap = this.initializeBaseCssMap();
+    this.extractAtRules(root, classNames, baseCssMap);
+    this.extractRules(root, classNames, baseCssMap);
     return baseCssMap;
   }
-  initializeBaseCssMap(baseCssMap) {
-    ["INDIVIDUAL", ...this.breakpoints].forEach((breakpoint) => {
-      const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
-      const ruleTypeMap = /* @__PURE__ */ new Map([
-        ["CORE", /* @__PURE__ */ new Map()],
-        ["OTHER", /* @__PURE__ */ new Map()]
-      ]);
-      baseCssMap.set(mediaQueryParam, { ruleTypeMap, atRuleName: "media" });
+  initializeBaseCssMap() {
+    const baseCssMap = /* @__PURE__ */ new Map();
+    const keys = [INDIVIDUAL, ...this.breakpoints];
+    keys.forEach((breakpoint) => {
+      const atRuleParam = this.getBaseCssMapKeyByParam(breakpoint);
+      this.addAtRuleParamToMap(baseCssMap, atRuleParam, "media");
     });
+    return baseCssMap;
   }
-  extractAtRules(root, uniqueJSXClasses, baseCssMap) {
+  extractAtRules(root, classNames, baseCssMap) {
     root.walkAtRules((atRule) => {
-      const mediaQuery = atRule.params;
-      if (!baseCssMap.has(mediaQuery)) {
-        const ruleTypeMap = /* @__PURE__ */ new Map([
-          ["CORE", /* @__PURE__ */ new Map()],
-          ["OTHER", /* @__PURE__ */ new Map()]
-        ]);
-        baseCssMap.set(mediaQuery, { ruleTypeMap, atRuleName: atRule.name });
+      const atRuleParam = atRule.params;
+      if (!baseCssMap.has(atRuleParam)) {
+        this.addAtRuleParamToMap(baseCssMap, atRuleParam, atRule.name);
       }
-      const entry = baseCssMap.get(mediaQuery);
+      const entry = baseCssMap.get(atRuleParam);
       atRule.walkRules((rule) => {
-        const selector = this.removeDotPrefix(rule.selector);
-        const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
-        const ruleMap = entry == null ? void 0 : entry.ruleTypeMap.get(ruleType);
-        ruleMap.set(selector, rule);
-        entry == null ? void 0 : entry.ruleTypeMap.set(ruleType, ruleMap);
-        rule.remove();
+        this.processRule(rule, classNames, entry);
       });
       atRule.remove();
     });
   }
-  extractRules(root, uniqueJSXClasses, baseCssMap) {
-    if (!baseCssMap.has("INDIVIDUAL")) {
-      const ruleTypeMap = /* @__PURE__ */ new Map([
-        ["CORE", /* @__PURE__ */ new Map()],
-        ["OTHER", /* @__PURE__ */ new Map()]
-      ]);
-      baseCssMap.set("INDIVIDUAL", { ruleTypeMap });
-    }
-    const entry = baseCssMap.get("INDIVIDUAL");
+  extractRules(root, classNames, baseCssMap) {
+    const entry = baseCssMap.get(INDIVIDUAL);
     root.walkRules((rule) => {
       var _a;
       if (((_a = rule.parent) == null ? void 0 : _a.type) === "atrule") return;
-      const selector = this.removeDotPrefix(rule.selector);
-      const ruleType = uniqueJSXClasses.includes(selector) ? "CORE" : "OTHER";
-      const ruleMap = entry == null ? void 0 : entry.ruleTypeMap.get(ruleType);
-      ruleMap.set(selector, rule);
-      entry == null ? void 0 : entry.ruleTypeMap.set(ruleType, ruleMap);
-      rule.remove();
+      this.processRule(rule, classNames, entry);
     });
   }
-  appendBaseMap(baseCssMap, uniqueJSXClasses, root) {
+  processRule(rule, classNames, entry) {
+    const selector = removeDotPrefix(rule.selector);
+    const ruleType = classNames.includes(selector) ? "CORE" : "OTHER";
+    const ruleMap = entry == null ? void 0 : entry.ruleTypeMap.get(ruleType);
+    ruleMap.set(selector, rule);
+    entry == null ? void 0 : entry.ruleTypeMap.set(ruleType, ruleMap);
+    rule.remove();
+  }
+  addAtRuleParamToMap(baseCssMap, atRuleParam, atRuleName) {
+    const ruleTypeMap = /* @__PURE__ */ new Map([
+      ["CORE", /* @__PURE__ */ new Map()],
+      ["OTHER", /* @__PURE__ */ new Map()]
+    ]);
+    baseCssMap.set(atRuleParam, { ruleTypeMap, atRuleName });
+  }
+  appendBaseMap(baseCssMap, classNames, root) {
     for (const [breakpoint] of baseCssMap) {
-      this.addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint);
+      this.addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint);
     }
   }
-  addBreakpointClassesToRoot(baseCssMap, uniqueJSXClasses, root, breakpoint) {
-    const mediaQueryParam = this.getMediaQueryParamForBreakpoint(breakpoint);
-    const entry = baseCssMap.get(mediaQueryParam);
+  addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint) {
+    const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint);
+    const entry = baseCssMap.get(baseCssKey);
     const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
-    if (mediaQueryParam === "INDIVIDUAL") {
-      this.appendClasses(ruleTypeMap, uniqueJSXClasses, root, mediaQueryParam);
+    if (baseCssKey === INDIVIDUAL) {
+      this.appendClasses(ruleTypeMap, classNames, root, baseCssKey);
       return;
     }
-    const atRuleName = entry == null ? void 0 : entry.atRuleName;
-    let atRule;
-    if (atRuleName) {
-      atRule = new import_postcss.AtRule({ name: atRuleName, params: mediaQueryParam, nodes: [] });
-    } else {
-      atRule = new import_postcss.AtRule({ name: "media", params: mediaQueryParam, nodes: [] });
-    }
+    const atRuleName = (entry == null ? void 0 : entry.atRuleName) ? entry == null ? void 0 : entry.atRuleName : "media";
+    const atRule = new import_postcss.AtRule({ name: atRuleName, params: baseCssKey, nodes: [] });
     if (!ruleTypeMap) {
       root.append(atRule);
       return;
     }
-    this.appendClasses(ruleTypeMap, uniqueJSXClasses, atRule, mediaQueryParam);
+    this.appendClasses(ruleTypeMap, classNames, atRule, baseCssKey);
     root.append(atRule);
   }
-  appendClasses(mediaQuery, uniqueJSXClasses, root, mediaQueryParam) {
-    const coreRules = mediaQuery.get("CORE");
-    const otherRules = mediaQuery.get("OTHER");
-    uniqueJSXClasses.forEach((selector) => {
+  appendClasses(ruleTypeMap, classNames, root, atRuleParam) {
+    const coreRules = ruleTypeMap.get("CORE");
+    const otherRules = ruleTypeMap.get("OTHER");
+    classNames.forEach((selector) => {
       if (coreRules.has(selector)) {
         root.append(coreRules.get(selector));
         coreRules.delete(selector);
       } else {
-        if (mediaQueryParam === "INDIVIDUAL") {
+        if (atRuleParam === INDIVIDUAL) {
           const newRule = new import_postcss.Rule({ selector: `.${selector}` });
           root.append(newRule);
         }
@@ -14419,29 +14394,25 @@ var CSSProcessor = class {
       root.append(rule);
     });
   }
-  getMediaQueryParamForBreakpoint(breakpoint) {
-    if (breakpoint === "INDIVIDUAL") {
-      return "INDIVIDUAL";
+  getBaseCssMapKeyByParam(breakpoint) {
+    if (breakpoint === INDIVIDUAL) {
+      return INDIVIDUAL;
     }
     if (typeof breakpoint === "string") {
       return breakpoint;
     }
     return `(min-width: ${breakpoint}px)`;
   }
-  removeDotPrefix(selector) {
-    return selector.replace(/^\./, "");
-  }
 };
 
 // src/cli.ts
+var import_commander = require("commander");
 var program = new import_commander.Command();
 program.command("watch").action(() => __async(null, null, function* () {
   const jsxParser = new JSXParser();
-  const fileUtils = new FileUtils();
-  const config = new Config(fileUtils);
-  const configData = yield config.getConfig();
+  const configData = yield getConfig();
   const cssProcessor = new CSSProcessor(configData);
-  const fileProcessor = new FileProcessor(jsxParser, fileUtils, cssProcessor);
+  const fileProcessor = new FileProcessor(jsxParser, cssProcessor);
   const watcher = new Watcher(configData, fileProcessor);
   watcher.setupWatch();
 }));

@@ -7,7 +7,7 @@ type RuleType = 'CORE' | 'OTHER'
 type RuleMap = Map<string, Rule>
 export type RuleTypeMap = Map<RuleType, RuleMap>
 
-type BaseCssEntry = {
+export type BaseCssEntry = {
   ruleTypeMap: RuleTypeMap
   atRuleName?: string
 }

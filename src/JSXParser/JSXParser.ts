@@ -1,4 +1,4 @@
-import { ParseResult, parse } from '@babel/parser'
+import { parse } from '@babel/parser'
 import { JSXExpressionContainer, StringLiteral, traverse } from '@babel/types'
 
 export class JSXParser {
