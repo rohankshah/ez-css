@@ -1,9 +1,7 @@
 import { removeDotPrefix } from '@/core/utils/utils'
 import { configType } from '@/types/congif-types'
-import { BaseCssEntry, BaseCssMapType, RuleTypeMap } from '@/types/css-processor-types'
+import { BaseCssEntry, BaseCssMapType, INDIVIDUAL, RuleMap, RuleTypeMap } from '@/types/css-processor-types'
 import postcss, { AtRule, Root, Rule } from 'postcss'
-
-const INDIVIDUAL = 'INDIVIDUAL'
 
 export class CSSProcessor {
   config: configType
@@ -25,6 +23,9 @@ export class CSSProcessor {
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames: string[], root: Root) {
     const baseCssMap = this.groupClassesByAtRules(classNames, root)
+
+    // Clear root
+    root.removeAll()
 
     // Reinsert based on the jsx order
     this.appendBaseMap(baseCssMap, classNames, root)
@@ -66,8 +67,6 @@ export class CSSProcessor {
       atRule.walkRules((rule) => {
         this.processRule(rule, classNames, entry)
       })
-
-      atRule.remove()
     })
   }
 
@@ -92,8 +91,6 @@ export class CSSProcessor {
     ruleMap.set(selector, rule)
 
     entry?.ruleTypeMap.set(ruleType, ruleMap)
-
-    rule.remove()
   }
 
   addAtRuleParamToMap(baseCssMap: BaseCssMapType, atRuleParam: string, atRuleName: string) {
@@ -107,32 +104,26 @@ export class CSSProcessor {
 
   appendBaseMap(baseCssMap: BaseCssMapType, classNames: string[], root: Root) {
     for (const [breakpoint] of baseCssMap) {
-      this.addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint)
+      const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint)
+      const entry = baseCssMap.get(baseCssKey)
+
+      if (baseCssKey === INDIVIDUAL) {
+        this.addIndividualClassesToRoot(entry, classNames, root, baseCssKey)
+        continue
+      }
+      this.addAtRuleToRoot(baseCssKey, entry, classNames, root)
     }
   }
 
-  addBreakpointClassesToRoot(
-    baseCssMap: BaseCssMapType,
-    classNames: string[],
-    root: Root,
-    breakpoint: string | number
-  ) {
-    const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint)
-
-    const entry = baseCssMap.get(baseCssKey)
+  addIndividualClassesToRoot(entry: BaseCssEntry, classNames: string[], root: Root, baseCssKey: string) {
     const ruleTypeMap = entry?.ruleTypeMap
+    this.appendClasses(ruleTypeMap, classNames, root, baseCssKey)
+  }
 
-    // Append INDIVIDUAL classes directly to root
-    if (baseCssKey === INDIVIDUAL) {
-      this.appendClasses(ruleTypeMap, classNames, root, baseCssKey)
-      return
-    }
+  addAtRuleToRoot(baseCssKey: string, entry: BaseCssEntry, classNames: string[], root: Root) {
+    const ruleTypeMap = entry?.ruleTypeMap
+    const atRule = this.createAtRule(entry, baseCssKey)
 
-    const atRuleName = entry?.atRuleName ? entry?.atRuleName : 'media'
-
-    const atRule = new AtRule({ name: atRuleName, params: baseCssKey, nodes: [] })
-
-    // If no classes exist for atRule param, just append to root and go to next breakpoint
     if (!ruleTypeMap) {
       root.append(atRule)
       return
@@ -142,10 +133,24 @@ export class CSSProcessor {
     root.append(atRule)
   }
 
+  createAtRule(entry: BaseCssEntry, baseCssKey: string) {
+    const atRuleName = entry?.atRuleName ? entry?.atRuleName : 'media'
+
+    const atRule = new AtRule({ name: atRuleName, params: baseCssKey, nodes: [] })
+
+    return atRule
+  }
+
   appendClasses(ruleTypeMap: RuleTypeMap, classNames: string[], root: Root | AtRule, atRuleParam: string) {
     const coreRules = ruleTypeMap.get('CORE')
     const otherRules = ruleTypeMap.get('OTHER')
 
+    this.appendCoreRules(coreRules, classNames, root, atRuleParam)
+
+    this.appendOtherRules(otherRules, root)
+  }
+
+  appendCoreRules(coreRules: RuleMap, classNames: string[], root: Root | AtRule, atRuleParam: string) {
     classNames.forEach((selector) => {
       if (coreRules.has(selector)) {
         // If class existed before, then use the same one
@@ -160,7 +165,9 @@ export class CSSProcessor {
         }
       }
     })
+  }
 
+  appendOtherRules(otherRules: RuleMap, root: Root | AtRule) {
     otherRules.forEach((rule) => {
       root.append(rule)
     })
