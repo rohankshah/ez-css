@@ -14284,9 +14284,11 @@ var Watcher = class {
   }
 };
 
+// src/types/css-processor-types.ts
+var INDIVIDUAL = "INDIVIDUAL";
+
 // src/CSSProcessor/CSSProcessor.ts
 var import_postcss = __toESM(require("postcss"));
-var INDIVIDUAL = "INDIVIDUAL";
 var CSSProcessor = class {
   constructor(config) {
     this.config = config;
@@ -14356,19 +14358,22 @@ var CSSProcessor = class {
   }
   appendBaseMap(baseCssMap, classNames, root) {
     for (const [breakpoint] of baseCssMap) {
-      this.addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint);
+      const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint);
+      const entry = baseCssMap.get(baseCssKey);
+      if (baseCssKey === INDIVIDUAL) {
+        this.addIndividualClassesToRoot(entry, classNames, root, baseCssKey);
+        continue;
+      }
+      this.addAtRuleToRoot(baseCssKey, entry, classNames, root);
     }
   }
-  addBreakpointClassesToRoot(baseCssMap, classNames, root, breakpoint) {
-    const baseCssKey = this.getBaseCssMapKeyByParam(breakpoint);
-    const entry = baseCssMap.get(baseCssKey);
+  addIndividualClassesToRoot(entry, classNames, root, baseCssKey) {
     const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
-    if (baseCssKey === INDIVIDUAL) {
-      this.appendClasses(ruleTypeMap, classNames, root, baseCssKey);
-      return;
-    }
-    const atRuleName = (entry == null ? void 0 : entry.atRuleName) ? entry == null ? void 0 : entry.atRuleName : "media";
-    const atRule = new import_postcss.AtRule({ name: atRuleName, params: baseCssKey, nodes: [] });
+    this.appendClasses(ruleTypeMap, classNames, root, baseCssKey);
+  }
+  addAtRuleToRoot(baseCssKey, entry, classNames, root) {
+    const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
+    const atRule = this.createAtRule(entry, baseCssKey);
     if (!ruleTypeMap) {
       root.append(atRule);
       return;
@@ -14376,9 +14381,18 @@ var CSSProcessor = class {
     this.appendClasses(ruleTypeMap, classNames, atRule, baseCssKey);
     root.append(atRule);
   }
+  createAtRule(entry, baseCssKey) {
+    const atRuleName = (entry == null ? void 0 : entry.atRuleName) ? entry == null ? void 0 : entry.atRuleName : "media";
+    const atRule = new import_postcss.AtRule({ name: atRuleName, params: baseCssKey, nodes: [] });
+    return atRule;
+  }
   appendClasses(ruleTypeMap, classNames, root, atRuleParam) {
     const coreRules = ruleTypeMap.get("CORE");
     const otherRules = ruleTypeMap.get("OTHER");
+    this.appendCoreRules(coreRules, classNames, root, atRuleParam);
+    this.appendOtherRules(otherRules, root);
+  }
+  appendCoreRules(coreRules, classNames, root, atRuleParam) {
     classNames.forEach((selector) => {
       if (coreRules.has(selector)) {
         root.append(coreRules.get(selector));
@@ -14390,6 +14404,8 @@ var CSSProcessor = class {
         }
       }
     });
+  }
+  appendOtherRules(otherRules, root) {
     otherRules.forEach((rule) => {
       root.append(rule);
     });

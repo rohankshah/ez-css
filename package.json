@@ -14,7 +14,7 @@
     "dev": "tsup src/cli.ts --watch",
     "build": "tsup src/cli.ts",
     "test": "vitest",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch --printConsoleTrace=true --silent=false"
   },
   "keywords": [],
   "author": "",
