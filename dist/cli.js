@@ -14303,6 +14303,7 @@ var CSSProcessor = class {
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames, root) {
     const baseCssMap = this.groupClassesByAtRules(classNames, root);
+    root.removeAll();
     this.appendBaseMap(baseCssMap, classNames, root);
   }
   groupClassesByAtRules(classNames, root) {
@@ -14330,7 +14331,6 @@ var CSSProcessor = class {
       atRule.walkRules((rule) => {
         this.processRule(rule, classNames, entry);
       });
-      atRule.remove();
     });
   }
   extractRules(root, classNames, baseCssMap) {
@@ -14347,7 +14347,6 @@ var CSSProcessor = class {
     const ruleMap = entry == null ? void 0 : entry.ruleTypeMap.get(ruleType);
     ruleMap.set(selector, rule);
     entry == null ? void 0 : entry.ruleTypeMap.set(ruleType, ruleMap);
-    rule.remove();
   }
   addAtRuleParamToMap(baseCssMap, atRuleParam, atRuleName) {
     const ruleTypeMap = /* @__PURE__ */ new Map([

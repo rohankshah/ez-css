@@ -24,6 +24,9 @@ export class CSSProcessor {
   syncInOrder(classNames: string[], root: Root) {
     const baseCssMap = this.groupClassesByAtRules(classNames, root)
 
+    // Clear root
+    root.removeAll()
+
     // Reinsert based on the jsx order
     this.appendBaseMap(baseCssMap, classNames, root)
   }
@@ -64,8 +67,6 @@ export class CSSProcessor {
       atRule.walkRules((rule) => {
         this.processRule(rule, classNames, entry)
       })
-
-      atRule.remove()
     })
   }
 
@@ -90,8 +91,6 @@ export class CSSProcessor {
     ruleMap.set(selector, rule)
 
     entry?.ruleTypeMap.set(ruleType, ruleMap)
-
-    rule.remove()
   }
 
   addAtRuleParamToMap(baseCssMap: BaseCssMapType, atRuleParam: string, atRuleName: string) {
