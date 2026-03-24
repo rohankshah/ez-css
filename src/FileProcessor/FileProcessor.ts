@@ -39,6 +39,8 @@ export class FileProcessor {
       parser: 'css'
     })
 
-    await writeUtf8File(cssFilePath, formatted)
+    const formattedWithSpacing = formatted.replace(/}\n(?=\S)/g, '}\n\n')
+
+    await writeUtf8File(cssFilePath, formattedWithSpacing)
   }
 }
