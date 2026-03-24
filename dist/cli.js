@@ -14187,7 +14187,8 @@ var FileProcessor = class {
       const formatted = yield import_prettier.default.format(processedCss.css, {
         parser: "css"
       });
-      yield writeUtf8File(cssFilePath, formatted);
+      const formattedWithSpacing = formatted.replace(/}\n(?=\S)/g, "}\n\n");
+      yield writeUtf8File(cssFilePath, formattedWithSpacing);
     });
   }
 };
@@ -14302,11 +14303,11 @@ var CSSProcessor = class {
   // The aim for now is to preserve classes that are not in use inside the jsx
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames, root) {
-    const baseCssMap = this.groupClassesByAtRules(classNames, root);
+    const baseCssMap = this.createCssMap(classNames, root);
     root.removeAll();
     this.appendBaseMap(baseCssMap, classNames, root);
   }
-  groupClassesByAtRules(classNames, root) {
+  createCssMap(classNames, root) {
     const baseCssMap = this.initializeBaseCssMap();
     this.extractAtRules(root, classNames, baseCssMap);
     this.extractRules(root, classNames, baseCssMap);
@@ -14338,6 +14339,8 @@ var CSSProcessor = class {
     root.walkRules((rule) => {
       var _a;
       if (((_a = rule.parent) == null ? void 0 : _a.type) === "atrule") return;
+      const selector = removeDotPrefix(rule.selector);
+      if (!classNames.includes(selector) && rule.nodes.length === 0) return;
       this.processRule(rule, classNames, entry);
     });
   }
@@ -14363,14 +14366,14 @@ var CSSProcessor = class {
         this.addIndividualClassesToRoot(entry, classNames, root, baseCssKey);
         continue;
       }
-      this.addAtRuleToRoot(baseCssKey, entry, classNames, root);
+      this.addAtRuleClassesToRoot(baseCssKey, entry, classNames, root);
     }
   }
   addIndividualClassesToRoot(entry, classNames, root, baseCssKey) {
     const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
     this.appendClasses(ruleTypeMap, classNames, root, baseCssKey);
   }
-  addAtRuleToRoot(baseCssKey, entry, classNames, root) {
+  addAtRuleClassesToRoot(baseCssKey, entry, classNames, root) {
     const ruleTypeMap = entry == null ? void 0 : entry.ruleTypeMap;
     const atRule = this.createAtRule(entry, baseCssKey);
     if (!ruleTypeMap) {

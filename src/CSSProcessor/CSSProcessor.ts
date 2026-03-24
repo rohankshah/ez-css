@@ -22,7 +22,7 @@ export class CSSProcessor {
   // The aim for now is to preserve classes that are not in use inside the jsx
   // Could expose (preserving / not preserving) as a boolean to the config later on
   syncInOrder(classNames: string[], root: Root) {
-    const baseCssMap = this.groupClassesByAtRules(classNames, root)
+    const baseCssMap = this.createCssMap(classNames, root)
 
     // Clear root
     root.removeAll()
@@ -31,7 +31,7 @@ export class CSSProcessor {
     this.appendBaseMap(baseCssMap, classNames, root)
   }
 
-  groupClassesByAtRules(classNames: string[], root: Root) {
+  createCssMap(classNames: string[], root: Root) {
     const baseCssMap = this.initializeBaseCssMap()
 
     this.extractAtRules(root, classNames, baseCssMap)
@@ -77,6 +77,16 @@ export class CSSProcessor {
     root.walkRules((rule) => {
       if (rule.parent?.type === 'atrule') return
 
+      const selector = removeDotPrefix(rule.selector)
+
+      // IMPORTANT:
+      // We only add those rules that are in jsx or have properties
+      // If a rule is isn't in jsx, but has properties inside => we keep them
+      // If a rule is isn't in jsx, but doesn't have properties inside => we discard them
+
+      // Could expose this property in the config later
+      if (!classNames.includes(selector) && rule.nodes.length === 0) return
+
       this.processRule(rule, classNames, entry)
     })
   }
@@ -86,7 +96,7 @@ export class CSSProcessor {
 
     const ruleType = classNames.includes(selector) ? 'CORE' : 'OTHER'
 
-    const ruleMap = entry?.ruleTypeMap.get(ruleType)!
+    const ruleMap = entry?.ruleTypeMap.get(ruleType)
 
     ruleMap.set(selector, rule)
 
@@ -111,7 +121,7 @@ export class CSSProcessor {
         this.addIndividualClassesToRoot(entry, classNames, root, baseCssKey)
         continue
       }
-      this.addAtRuleToRoot(baseCssKey, entry, classNames, root)
+      this.addAtRuleClassesToRoot(baseCssKey, entry, classNames, root)
     }
   }
 
@@ -120,7 +130,7 @@ export class CSSProcessor {
     this.appendClasses(ruleTypeMap, classNames, root, baseCssKey)
   }
 
-  addAtRuleToRoot(baseCssKey: string, entry: BaseCssEntry, classNames: string[], root: Root) {
+  addAtRuleClassesToRoot(baseCssKey: string, entry: BaseCssEntry, classNames: string[], root: Root) {
     const ruleTypeMap = entry?.ruleTypeMap
     const atRule = this.createAtRule(entry, baseCssKey)
 
