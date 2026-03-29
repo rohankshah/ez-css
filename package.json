@@ -1,7 +1,7 @@
 {
   "name": "ez-css",
   "version": "1.0.0",
-  "description": "",
+  "description": "A library to make writing CSS in react easier",
   "main": "dist/cli.js",
   "types": "dist/cli.d.ts",
   "files": [
