@@ -1,5 +1,5 @@
 {
-  "name": "ez-css",
+  "name": "@rohankshah/ez-css",
   "version": "1.0.0",
   "description": "A library to make writing CSS in react easier",
   "main": "dist/cli.js",
@@ -9,6 +9,9 @@
   ],
   "bin": {
     "ez-css": "./dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "dev": "tsup src/cli.ts --watch",
