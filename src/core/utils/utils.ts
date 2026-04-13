@@ -5,7 +5,7 @@ async function checkIfFileExists(pathToCheck: string) {
   try {
     const stats = await stat(pathToCheck)
     return stats.isFile()
-  } catch (error) {
+  } catch (error: any) {
     if (error.code === 'ENOENT') {
       return false
     }
@@ -39,7 +39,7 @@ async function getConfig() {
   const configExists = await checkIfFileExists(configPath)
 
   if (!configExists) {
-    throw 'Config not found'
+    throw new Error('Config not found')
   }
 
   const configDataRaw = await readUtf8File(configPath)
