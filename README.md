@@ -9,6 +9,7 @@ EZ-CSS is a lightweight utility that automatically maps the class names you writ
 ## Features
 - Automatically maps the classnames in the css file.
 - No need to manually copy paste the classnames again and again.
+- Always maps classnames in the same order they appear in the code.
 
 ## Installation
 
@@ -33,3 +34,8 @@ Install package
 3. Write HTML with classnames and hit save.
 
 #### Note: While ez-css creates a .css file automatically if one doesn't exist, the file still needs to be manually imported to the component.
+
+
+https://github.com/user-attachments/assets/5a429629-f82c-4011-a51d-b7ac9d6b5267
+
+
